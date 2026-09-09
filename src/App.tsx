@@ -1,413 +1,415 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  INITIAL_FLOOD_ZONES,
-  WATER_BODIES,
-  CRITICAL_FACILITIES,
-  SUBMERGED_SUBWAYS,
-  RESERVOIR_DATA,
-  INITIAL_INCIDENTS
-} from './data/chennaiData';
-import {
-  FloodZone,
-  CriticalFacility,
-  SubmergedRoadOrSubway,
-  IncidentReport
-} from './types';
-import {
-  EngineParams,
-  TransportMode,
-  ChennaiLocationPreset,
-  DynamicRoadSegment,
-  CHENNAI_LOCATION_PRESETS,
-  CHENNAI_ROAD_SEGMENTS,
-  rankRoadDisruptions,
-  solveDynamicRoutes
-} from './utils/floodEngine';
-import { MapComponent } from './components/MapComponent';
-import { ProjectControlPanel } from './components/ProjectControlPanel';
-import { GoogleDriveNavigationOverlay } from './components/GoogleDriveNavigationOverlay';
-import { GoogleMapsAIAssistantModal } from './components/GoogleMapsAIAssistantModal';
-import { HydrologySimulationModal } from './components/HydrologySimulationModal';
-import { EmergencyDirectoryModal } from './components/EmergencyDirectoryModal';
-import { IncidentReporterModal } from './components/IncidentReporterModal';
-import { ThreeDDigitalTwin } from './components/ThreeDDigitalTwin';
-import { SubwaySensorDrawer } from './components/SubwaySensorDrawer';
-import {
-  INITIAL_SUBWAY_SENSORS,
-  SubwaySensorTelemetry
-} from './utils/telemetryService';
+  ChennaiSafeRouteHeader,
+  PlanRoutePanel,
+  RoadRiskDrawer,
+  EmergencyAccessView,
+  RiskRoadsView,
+  FloodMapView,
+  HistoryView,
+  NavigationMenuBar,
+  SafeRouteMap
+} from './components/navigation';
+import { ActiveNavTab, RoutePreference, RoadRiskSegment, RouteOptionData, EmergencyFacility, PlaceSuggestion } from './types/navigation';
+import { calculateDynamicRoadRisks, fetchRouteRecommendations } from './services/routeService';
+import { MOCK_EMERGENCY_FACILITIES } from './data/mockNavigationData';
+import { ChevronUp } from 'lucide-react';
 
 export function App() {
-  // View Mode: '3d' (New 3D Digital Twin) or '2d' (Original 2D GIS Map Dashboard)
-  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<ActiveNavTab>('route');
 
-  // Navigation & Origin/Destination State
-  const [origin, setOrigin] = useState<ChennaiLocationPreset>(CHENNAI_LOCATION_PRESETS[0]); // Velachery
-  const [destination, setDestination] = useState<ChennaiLocationPreset>(CHENNAI_LOCATION_PRESETS[6]); // Apollo Hospitals
-  const [selectedMode, setSelectedMode] = useState<TransportMode>('drive');
+  // Route Planning State & Coordinates
+  const [origin, setOrigin] = useState('Current location (T. Nagar)');
+  const [originCoords, setOriginCoords] = useState<[number, number]>([13.0418, 80.2341]);
+  const [destination, setDestination] = useState('Phoenix Marketcity Velachery');
+  const [destinationCoords, setDestinationCoords] = useState<[number, number]>([12.9912, 80.2170]);
+  const [rainfallMm, setRainfallMm] = useState(150); // Default 150 mm / 6h
+  const [preference, setPreference] = useState<RoutePreference>('balanced');
+  const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
+  const [hasSearched, setHasSearched] = useState(true);
 
-  // Driving Navigation Mode (Google Maps style drive simulation)
-  const [isDriving, setIsDriving] = useState(false);
-  const [navigationStepIndex, setNavigationStepIndex] = useState(0);
+  // GPS Location state (optional)
+  const [userGpsCoords, setUserGpsCoords] = useState<[number, number] | null>(null);
 
-  // Background Hydrology Simulation Parameters
-  const [engineParams, setEngineParams] = useState<EngineParams>({
-    rainfallRateMmHr: 110,
-    cumulative24hMm: 210,
-    stormCenter: [12.9800, 80.2200],
-    stormRadiusKm: 14,
-    chembarambakkamDischargeCusecs: 12500,
-    highTideActive: true
-  });
+  // Emergency Focus state
+  const [focusedFacilityCoords, setFocusedFacilityCoords] = useState<[number, number] | null>(null);
 
-  // Modal Dialog States
-  const [showAIAssistant, setShowAIAssistant] = useState(false);
-  const [showHydrology, setShowHydrology] = useState(false);
-  const [showEmergency, setShowEmergency] = useState(false);
-  const [showIncident, setShowIncident] = useState(false);
+  // Computed Routes
+  const [routes, setRoutes] = useState<RouteOptionData[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>('route-balanced');
 
-  // Real-Time Intelligence: Subway IoT Drawer & Doppler Radar
-  const [isSubwayDrawerOpen, setIsSubwayDrawerOpen] = useState(false);
-  const [subwaySensors, setSubwaySensors] = useState<SubwaySensorTelemetry[]>(INITIAL_SUBWAY_SENSORS);
-  const [showRadarLayer, setShowRadarLayer] = useState(false);
+  // Selected Road Risk Segment for side drawer inspector
+  const [selectedRoadSegment, setSelectedRoadSegment] = useState<RoadRiskSegment | null>(null);
 
-  // Dynamic Incidents
-  const [incidents, setIncidents] = useState<IncidentReport[]>(INITIAL_INCIDENTS);
+  // Mobile Bottom Sheet State
+  const [isMobileSheetExpanded, setIsMobileSheetExpanded] = useState(false);
 
-  // Panel collapse
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
-  const [focusedRoad, setFocusedRoad] = useState<DynamicRoadSegment | null>(null);
+  // Dynamically compute road risks when rainfall scenario changes
+  const dynamicRoadSegments = useMemo(() => {
+    return calculateDynamicRoadRisks(rainfallMm);
+  }, [rainfallMm]);
 
-  // Inspector Selections
-  const [selectedZone, setSelectedZone] = useState<FloodZone | null>(null);
-  const [selectedFacility, setSelectedFacility] = useState<CriticalFacility | null>(null);
-  const [selectedSubway, setSelectedSubway] = useState<SubmergedRoadOrSubway | null>(null);
-  const [selectedIncident, setSelectedIncident] = useState<IncidentReport | null>(null);
+  // Unified route calculator supporting immediate overrides (no React state lag)
+  const handleFindRouteWithParams = async (overrides?: {
+    newOrigin?: string;
+    newDestination?: string;
+    newRainfallMm?: number;
+    newPreference?: RoutePreference;
+    newOriginCoords?: [number, number];
+    newDestinationCoords?: [number, number];
+  }) => {
+    setIsLoadingRoutes(true);
+    const currentOrig = overrides?.newOrigin ?? origin;
+    const currentDest = overrides?.newDestination ?? destination;
+    const currentRain = overrides?.newRainfallMm ?? rainfallMm;
+    const currentPref = overrides?.newPreference ?? preference;
+    const currentOrigCoords = overrides?.newOriginCoords ?? originCoords;
+    const currentDestCoords = overrides?.newDestinationCoords ?? destinationCoords;
 
-  // Layer Toggles
-  const [showInundationPolygons, setShowInundationPolygons] = useState(true);
-  const [showWaterways, setShowWaterways] = useState(true);
-  const [showFacilities, setShowFacilities] = useState(false);
-  const [showSubways, setShowSubways] = useState(false);
-  const [showIncidents, setShowIncidents] = useState(false);
-  const [showRoadRiskSegments, setShowRoadRiskSegments] = useState(false);
+    try {
+      const result = await fetchRouteRecommendations({
+        origin: currentOrig,
+        destination: currentDest,
+        rainfallMm: currentRain,
+        preference: currentPref,
+        originCoords: currentOrigCoords,
+        destinationCoords: currentDestCoords
+      });
+      setRoutes(result.routes);
+      setHasSearched(true);
+      const match = result.routes.find(r => r.type === currentPref) || result.routes[1] || result.routes[0];
+      if (match) setSelectedRouteId(match.id);
+    } finally {
+      setIsLoadingRoutes(false);
+    }
+  };
 
-  // Setup global interactive map-click listeners for picking start/end pins
+  const handleFindRoute = () => handleFindRouteWithParams();
+
+  // Run on mount once to pre-load default routes
   useEffect(() => {
-    (window as any).__setOriginFromMap = (coords: [number, number]) => {
-      setOrigin({
-        id: `map-${Date.now()}`,
-        name: `Map Origin (${coords[0].toFixed(3)}, ${coords[1].toFixed(3)})`,
-        shortName: 'Map Pin',
-        area: 'Chennai Pin',
-        coords: coords,
-        elevationMsl: 6.5,
-        type: 'hub'
-      });
-      setSelectedRouteId(null);
-    };
-    (window as any).__setDestFromMap = (coords: [number, number]) => {
-      setDestination({
-        id: `map-${Date.now()}`,
-        name: `Map Destination (${coords[0].toFixed(3)}, ${coords[1].toFixed(3)})`,
-        shortName: 'Map Pin',
-        area: 'Chennai Pin',
-        coords: coords,
-        elevationMsl: 7.2,
-        type: 'hub'
-      });
-      setSelectedRouteId(null);
-    };
-    return () => {
-      delete (window as any).__setOriginFromMap;
-      delete (window as any).__setDestFromMap;
-    };
+    handleFindRoute();
   }, []);
 
-  // 1. Dynamic Physics-Based Evaluation of Road Segments
-  const rankedRoads = useMemo(() => {
-    return rankRoadDisruptions(CHENNAI_ROAD_SEGMENTS, engineParams);
-  }, [engineParams]);
+  // When rainfall slider moves, automatically refresh routes
+  useEffect(() => {
+    if (hasSearched) {
+      handleFindRouteWithParams({ newRainfallMm: rainfallMm });
+    }
+  }, [rainfallMm]);
 
-  // 2. Dynamic Route Solver (Computes alternatives & recommends SAFEST ROUTE)
-  const dynamicRoutes = useMemo(() => {
-    return solveDynamicRoutes(origin, destination, engineParams, selectedMode);
-  }, [origin, destination, engineParams, selectedMode]);
-
-  // Active selected route (defaults to safest route auto-picked!)
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  // Current active route object
   const activeRoute = useMemo(() => {
-    if (selectedRouteId) {
-      const found = dynamicRoutes.find((r) => r.id === selectedRouteId);
-      if (found) return found;
+    return routes.find(r => r.id === selectedRouteId) || routes[1] || routes[0] || null;
+  }, [routes, selectedRouteId]);
+
+  // Quick action: use current GPS location if desired
+  const handleUseCurrentLocation = () => {
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const isChennai = lat >= 12.6 && lat <= 13.5 && lng >= 79.8 && lng <= 80.5;
+          const coords: [number, number] = isChennai ? [lat, lng] : [13.0418, 80.2341];
+          const label = isChennai
+            ? `Current location (${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E)`
+            : `Current location (T. Nagar)`;
+
+          setOrigin(label);
+          setOriginCoords(coords);
+          setUserGpsCoords(coords);
+
+          handleFindRouteWithParams({
+            newOrigin: label,
+            newOriginCoords: coords
+          });
+        },
+        (err) => {
+          console.warn('Geolocation fallback:', err.message);
+          const fallbackCoords: [number, number] = [13.0418, 80.2341];
+          const fallbackLabel = 'Current location (T. Nagar)';
+          setOrigin(fallbackLabel);
+          setOriginCoords(fallbackCoords);
+          setUserGpsCoords(fallbackCoords);
+
+          handleFindRouteWithParams({
+            newOrigin: fallbackLabel,
+            newOriginCoords: fallbackCoords
+          });
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } else {
+      const fallbackCoords: [number, number] = [13.0418, 80.2341];
+      const fallbackLabel = 'Current location (T. Nagar)';
+      setOrigin(fallbackLabel);
+      setOriginCoords(fallbackCoords);
+      setUserGpsCoords(fallbackCoords);
+
+      handleFindRouteWithParams({
+        newOrigin: fallbackLabel,
+        newOriginCoords: fallbackCoords
+      });
     }
-    // Auto pick best/safest route!
-    const safest = dynamicRoutes.find((r) => r.isSafest);
-    return safest || dynamicRoutes[0] || null;
-  }, [dynamicRoutes, selectedRouteId]);
+  };
 
-  // Dynamic Inundation Zones
-  const simulatedZones = useMemo(() => {
-    const rainfallFactor = engineParams.rainfallRateMmHr / 100;
-    const dischargeFactor = engineParams.chembarambakkamDischargeCusecs / 9500;
-
-    return INITIAL_FLOOD_ZONES.map((zone) => {
-      let multiplier = rainfallFactor;
-      if (zone.id.includes('saidapet') || zone.id.includes('mudichur')) {
-        multiplier = 0.4 * rainfallFactor + 0.6 * dischargeFactor;
-      }
-      const depth = Math.round(zone.waterDepthMeters * multiplier * 100) / 100;
-      let risk: FloodZone['riskLevel'] = 'low';
-      if (depth >= 1.0) risk = 'critical';
-      else if (depth >= 0.6) risk = 'high';
-      else if (depth >= 0.3) risk = 'moderate';
-
-      return {
-        ...zone,
-        waterDepthMeters: depth,
-        riskLevel: risk,
-        accessStatus: (depth > 0.8 ? 'blocked' : depth > 0.4 ? 'restricted' : 'open') as FloodZone['accessStatus']
-      };
+  // Select place for origin from autocomplete
+  const handleSelectOriginPlace = (place: PlaceSuggestion) => {
+    setOrigin(place.name);
+    setOriginCoords(place.coordinates);
+    handleFindRouteWithParams({
+      newOrigin: place.name,
+      newOriginCoords: place.coordinates
     });
-  }, [engineParams]);
+  };
 
-  // Dynamic Water Bodies
-  const simulatedWaterBodies = useMemo(() => {
-    return WATER_BODIES.map((wb) => {
-      if (wb.id === 'water-adyar') {
-        const discharge = engineParams.chembarambakkamDischargeCusecs + engineParams.rainfallRateMmHr * 40;
-        const level = Math.min(8.0, 3.8 + discharge / 4500);
-        return {
-          ...wb,
-          dischargeCusecs: Math.round(discharge),
-          currentLevelMeters: Math.round(level * 10) / 10,
-          status: discharge > 16000 ? ('danger_overflow' as const) : ('rising' as const)
-        };
-      }
-      return wb;
+  // Select place for destination from autocomplete
+  const handleSelectDestinationPlace = (place: PlaceSuggestion) => {
+    setDestination(place.name);
+    setDestinationCoords(place.coordinates);
+    handleFindRouteWithParams({
+      newDestination: place.name,
+      newDestinationCoords: place.coordinates
     });
-  }, [engineParams]);
+  };
 
-  // Swap Locations Handler
+  // Swap starting location and destination anytime
   const handleSwapLocations = () => {
-    const temp = origin;
-    setOrigin(destination);
-    setDestination(temp);
-    setSelectedRouteId(null);
+    const prevOrigin = origin;
+    const prevOriginCoords = originCoords;
+    const prevDest = destination;
+    const prevDestCoords = destinationCoords;
+
+    setOrigin(prevDest);
+    setOriginCoords(prevDestCoords);
+    setDestination(prevOrigin);
+    setDestinationCoords(prevOriginCoords);
+
+    handleFindRouteWithParams({
+      newOrigin: prevDest,
+      newOriginCoords: prevDestCoords,
+      newDestination: prevOrigin,
+      newDestinationCoords: prevOriginCoords
+    });
   };
 
-  const handleFocusRoad = (road: DynamicRoadSegment) => {
-    setFocusedRoad(road);
-    const matchingZone = simulatedZones.find((z) =>
-      Math.abs(z.center[0] - road.coordinates[0][0]) < 0.02
-    );
-    if (matchingZone) {
-      setSelectedZone(matchingZone);
-    }
+  // Handle clicking "View on map" from Risk Roads page
+  const handleSelectSegmentFromList = (segment: RoadRiskSegment) => {
+    const current = dynamicRoadSegments.find(s => s.id === segment.id) || segment;
+    setSelectedRoadSegment(current);
+    setIsMobileSheetExpanded(false);
   };
 
-  // 1. Render New 3D Digital Twin Frontend as primary experience
-  if (viewMode === '3d') {
-    return (
-      <>
-        <ThreeDDigitalTwin
-          onSwitchTo2D={() => setViewMode('2d')}
-          onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
-          subwaySensors={subwaySensors}
-        />
-        <SubwaySensorDrawer
-          isOpen={isSubwayDrawerOpen}
-          onClose={() => setIsSubwayDrawerOpen(false)}
-          subwaySensors={subwaySensors}
-        />
-      </>
-    );
-  }
+  // Handle one-tap emergency navigation
+  const handleNavigateToEmergency = (facility: EmergencyFacility) => {
+    setDestination(facility.name);
+    setDestinationCoords(facility.coordinates);
+    setActiveTab('route');
+    setPreference('safer');
+    setIsMobileSheetExpanded(false);
+    setFocusedFacilityCoords(facility.coordinates);
 
-  // 2. Original 2D GIS Leaflet Dashboard (Completely preserved)
+    handleFindRouteWithParams({
+      newDestination: facility.name,
+      newDestinationCoords: facility.coordinates,
+      newPreference: 'safer'
+    });
+  };
+
+  // Re-run route from history
+  const handleRerunHistory = (orig: string, dest: string) => {
+    setOrigin(orig);
+    setDestination(dest);
+    setActiveTab('route');
+    handleFindRouteWithParams({
+      newOrigin: orig,
+      newDestination: dest
+    });
+  };
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none flex flex-col">
-      {/* Switch to 3D Digital Twin Floating Quick Button */}
-      <button
-        onClick={() => setViewMode('3d')}
-        className="fixed top-3.5 right-4 z-40 bg-linear-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-extrabold px-3.5 py-2 rounded-xl shadow-2xl flex items-center gap-2 text-xs border border-sky-400/40 backdrop-blur-md transition cursor-pointer group"
-        title="Switch to 3D Digital Twin Flood Model"
-      >
-        <span className="text-base group-hover:rotate-12 transition">🌐</span>
-        <span>Switch to 3D Digital Twin</span>
-      </button>
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-white text-slate-800 antialiased font-sans">
+      {/* Top Header with thin saffron line and bespoke brand */}
+      <ChennaiSafeRouteHeader rainfallMm={rainfallMm} />
 
-      {/* Full-screen Leaflet Map without any top border or top header banner */}
-      <main className="relative flex-1 w-full h-full overflow-hidden">
-        <MapComponent
-          zones={simulatedZones}
-          waterBodies={simulatedWaterBodies}
-          facilities={CRITICAL_FACILITIES}
-          subways={SUBMERGED_SUBWAYS}
-          incidents={incidents}
-          reservoirs={RESERVOIR_DATA}
-          selectedRoute={null}
-          dynamicRoute={activeRoute}
-          routes={dynamicRoutes}
-          onSelectRouteId={(id) => setSelectedRouteId(id)}
-          originName={origin.shortName || origin.name}
-          destinationName={destination.shortName || destination.name}
-          originCoords={origin.coords}
-          destinationCoords={destination.coords}
-          dynamicRoads={rankedRoads}
-          selectedZone={selectedZone}
-          onSelectZone={(z) => setSelectedZone(z)}
-          onSelectFacility={(f) => setSelectedFacility(f)}
-          onSelectSubway={(s) => setSelectedSubway(s)}
-          onSelectIncident={(i) => setSelectedIncident(i)}
-          onSelectRoadSegment={handleFocusRoad}
-          showInundationPolygons={showInundationPolygons}
-          showWaterways={showWaterways}
-          showFacilities={showFacilities}
-          showSubways={showSubways}
-          showIncidents={showIncidents}
-          showRoadRiskSegments={showRoadRiskSegments}
-          onToggleInundation={setShowInundationPolygons}
-          onToggleWaterways={setShowWaterways}
-          onToggleFacilities={setShowFacilities}
-          onToggleSubways={setShowSubways}
-          onToggleIncidents={setShowIncidents}
-          onToggleRoadRiskSegments={setShowRoadRiskSegments}
-          rainfallRate={engineParams.rainfallRateMmHr}
-          stormCenter={engineParams.stormCenter}
-          stormRadiusKm={engineParams.stormRadiusKm}
-          focusedRoad={focusedRoad}
-          isDriving={isDriving}
-          navigationStepIndex={navigationStepIndex}
-          showRadarLayer={showRadarLayer}
-          onToggleRadarLayer={setShowRadarLayer}
-          onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
-          subwaySensors={subwaySensors}
-          onSelectSubwaySensor={() => setIsSubwayDrawerOpen(true)}
-        />
+      {/* Main Content Area: Map + Left Panel */}
+      <div className="relative flex-1 flex overflow-hidden">
+        {/* Desktop Left Slim Panel */}
+        <aside className="hidden md:flex flex-col w-96 lg:w-104 border-r border-slate-200 bg-white z-20 shadow-xs h-full shrink-0 overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            {activeTab === 'route' && (
+              <PlanRoutePanel
+                origin={origin}
+                setOrigin={setOrigin}
+                destination={destination}
+                setDestination={setDestination}
+                rainfallMm={rainfallMm}
+                setRainfallMm={setRainfallMm}
+                preference={preference}
+                setPreference={setPreference}
+                routes={routes}
+                selectedRouteId={selectedRouteId}
+                onSelectRoute={setSelectedRouteId}
+                onFindRoute={handleFindRoute}
+                isLoading={isLoadingRoutes}
+                hasSearched={hasSearched}
+                onSelectOriginPlace={handleSelectOriginPlace}
+                onSelectDestinationPlace={handleSelectDestinationPlace}
+                onSwapLocations={handleSwapLocations}
+                onUseCurrentLocation={handleUseCurrentLocation}
+              />
+            )}
 
-        {/* Clean Google Maps Style Search & Safe Routes Panel (when not in active drive mode) */}
-        {!isDriving && (
-          <ProjectControlPanel
-            origin={origin}
-            destination={destination}
-            onSelectOrigin={(loc) => {
-              setOrigin(loc);
-              setSelectedRouteId(null);
-            }}
-            onSelectDestination={(loc) => {
-              setDestination(loc);
-              setSelectedRouteId(null);
-            }}
-            onSwapLocations={handleSwapLocations}
-            selectedMode={selectedMode}
-            onChangeMode={setSelectedMode}
-            routes={dynamicRoutes}
-            selectedRoute={activeRoute}
-            onSelectRoute={(r) => setSelectedRouteId(r.id)}
-            onStartDrive={() => {
-              setIsDriving(true);
-              setNavigationStepIndex(0);
-            }}
-            rankedRoads={rankedRoads}
-            onFocusRoadOnMap={handleFocusRoad}
-            isCollapsed={isPanelCollapsed}
-            onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
-            onOpenAIAssistant={() => setShowAIAssistant(true)}
-            onOpenHydrology={() => setShowHydrology(true)}
-            onOpenEmergency={() => setShowEmergency(true)}
-            onOpenIncident={() => setShowIncident(true)}
-            onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
+            {activeTab === 'risk_roads' && (
+              <RiskRoadsView
+                roadSegments={dynamicRoadSegments}
+                onSelectSegment={handleSelectSegmentFromList}
+              />
+            )}
+
+            {activeTab === 'emergency' && (
+              <EmergencyAccessView
+                onNavigateToFacility={handleNavigateToEmergency}
+                onSelectFacility={(fac) => setFocusedFacilityCoords(fac.coordinates)}
+              />
+            )}
+
+            {activeTab === 'flood_map' && (
+              <FloodMapView rainfallMm={rainfallMm} />
+            )}
+
+            {activeTab === 'history' && (
+              <HistoryView onRerunRoute={handleRerunHistory} />
+            )}
+          </div>
+
+          {/* Desktop Tab Switcher at bottom of left panel */}
+          <div className="border-t border-slate-200 bg-white p-0.5 w-full shrink-0">
+            <NavigationMenuBar
+              activeTab={activeTab}
+              onTabChange={(tab: ActiveNavTab) => {
+                setActiveTab(tab);
+                if (tab !== 'risk_roads' && tab !== 'route') {
+                  setSelectedRoadSegment(null);
+                }
+              }}
+              riskRoadCount={dynamicRoadSegments.filter(r => r.currentRisk >= 60).length}
+            />
+          </div>
+        </aside>
+
+        {/* Map View fills the entire remaining canvas */}
+        <main className="flex-1 relative h-full w-full bg-slate-100 overflow-hidden">
+          <SafeRouteMap
+            roadSegments={dynamicRoadSegments}
+            activeRoute={activeRoute}
+            allRoutes={routes}
+            selectedSegment={selectedRoadSegment}
+            onSelectRoadSegment={(seg: RoadRiskSegment) => setSelectedRoadSegment(seg)}
+            emergencyFacilities={MOCK_EMERGENCY_FACILITIES}
+            activeTab={activeTab}
+            onNavigateToFacility={handleNavigateToEmergency}
+            userGpsCoords={userGpsCoords}
+            focusedFacilityCoords={focusedFacilityCoords}
           />
-        )}
 
-        {/* Live Driving Navigation Mode HUD Overlay (Active when Start Drive is pressed) */}
-        {isDriving && activeRoute && (
-          <GoogleDriveNavigationOverlay
-            route={activeRoute}
-            rainfallRateMmHr={engineParams.rainfallRateMmHr}
-            alertThresholdMmHr={75}
-            onStepChange={(stepIdx) => setNavigationStepIndex(stepIdx)}
-            onExitNavigation={() => {
-              setIsDriving(false);
-              setNavigationStepIndex(0);
+          {/* Road Risk Drawer (Slides in from the right when tapping a red road segment) */}
+          <RoadRiskDrawer
+            segment={selectedRoadSegment}
+            onClose={() => setSelectedRoadSegment(null)}
+            onAvoidSegment={() => {
+              setPreference('safer');
+              handleFindRoute();
             }}
           />
-        )}
 
-        {/* Tactical Chennai Flood AI Assistant Modal */}
-        <GoogleMapsAIAssistantModal
-          isOpen={showAIAssistant}
-          onClose={() => setShowAIAssistant(false)}
-          userCoords={origin.coords}
-          onSelectDestinationName={(destName) => {
-            const match = CHENNAI_LOCATION_PRESETS.find(
-              (p) =>
-                p.name.toLowerCase().includes(destName.toLowerCase()) ||
-                p.shortName.toLowerCase().includes(destName.toLowerCase())
-            );
-            if (match) {
-              setDestination(match);
-              setSelectedRouteId(null);
-            }
+          {/* Mobile Collapsible Bottom Sheet */}
+          <div
+            className={`md:hidden absolute left-0 right-0 bottom-14 z-30 bg-white border-t border-slate-200 rounded-t-2xl shadow-2xl transition-all duration-300 flex flex-col ${
+              isMobileSheetExpanded ? 'h-[75vh]' : 'h-36'
+            }`}
+          >
+            {/* Sheet Handle */}
+            <div
+              onClick={() => setIsMobileSheetExpanded(!isMobileSheetExpanded)}
+              className="py-2.5 flex items-center justify-center cursor-pointer select-none"
+            >
+              <div className="w-10 h-1 bg-slate-300 rounded-full" />
+            </div>
+
+            {/* Content preview when collapsed vs full when expanded */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              {activeTab === 'route' ? (
+                isMobileSheetExpanded ? (
+                  <PlanRoutePanel
+                    origin={origin}
+                    setOrigin={setOrigin}
+                    destination={destination}
+                    setDestination={setDestination}
+                    rainfallMm={rainfallMm}
+                    setRainfallMm={setRainfallMm}
+                    preference={preference}
+                    setPreference={setPreference}
+                    routes={routes}
+                    selectedRouteId={selectedRouteId}
+                    onSelectRoute={setSelectedRouteId}
+                    onFindRoute={handleFindRoute}
+                    isLoading={isLoadingRoutes}
+                    hasSearched={hasSearched}
+                    onSelectOriginPlace={handleSelectOriginPlace}
+                    onSelectDestinationPlace={handleSelectDestinationPlace}
+                    onSwapLocations={handleSwapLocations}
+                    onUseCurrentLocation={handleUseCurrentLocation}
+                  />
+                ) : (
+                  <div
+                    onClick={() => setIsMobileSheetExpanded(true)}
+                    className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">
+                        {activeRoute ? `${activeRoute.name} Route: ${activeRoute.durationMinutes} min` : 'Plan Chennai Safe Route'}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {activeRoute?.tagline || 'Tap to configure route and rainfall scenario'}
+                      </div>
+                    </div>
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  </div>
+                )
+              ) : activeTab === 'risk_roads' ? (
+                <RiskRoadsView
+                  roadSegments={dynamicRoadSegments}
+                  onSelectSegment={handleSelectSegmentFromList}
+                />
+              ) : activeTab === 'emergency' ? (
+                <EmergencyAccessView
+                  onNavigateToFacility={handleNavigateToEmergency}
+                  onSelectFacility={(fac) => setFocusedFacilityCoords(fac.coordinates)}
+                />
+              ) : activeTab === 'flood_map' ? (
+                <FloodMapView rainfallMm={rainfallMm} />
+              ) : (
+                <HistoryView onRerunRoute={handleRerunHistory} />
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Mobile Bottom Navigation Menu Bar */}
+      <div className="md:hidden z-40 bg-white border-t border-slate-200 shadow-xl">
+        <NavigationMenuBar
+          activeTab={activeTab}
+          onTabChange={(tab: ActiveNavTab) => {
+            setActiveTab(tab);
+            setIsMobileSheetExpanded(true);
           }}
+          riskRoadCount={dynamicRoadSegments.filter(r => r.currentRisk >= 60).length}
         />
-
-        {/* Hydrological Rainfall & Lake Surge Simulator Modal */}
-        <HydrologySimulationModal
-          isOpen={showHydrology}
-          onClose={() => setShowHydrology(false)}
-          params={engineParams}
-          onUpdateParams={setEngineParams}
-          onReset={() => {
-            setEngineParams({
-              rainfallRateMmHr: 110,
-              cumulative24hMm: 210,
-              stormCenter: [12.9800, 80.2200],
-              stormRadiusKm: 14,
-              chembarambakkamDischargeCusecs: 12500,
-              highTideActive: true
-            });
-          }}
-          criticalRoadsCount={rankedRoads.filter((r) => r.expectedDepthCm >= 30).length}
-        />
-
-        {/* Chennai Emergency Helplines & Disaster Directory Modal */}
-        <EmergencyDirectoryModal
-          isOpen={showEmergency}
-          onClose={() => setShowEmergency(false)}
-        />
-
-        {/* Citizen Real-Time Field Flood Incident / SOS Reporter Modal */}
-        <IncidentReporterModal
-          isOpen={showIncident}
-          onClose={() => setShowIncident(false)}
-          onSubmitIncident={(newInc) => {
-            setIncidents((prev) => [newInc, ...prev]);
-            setShowIncident(false);
-          }}
-        />
-
-        {/* Real-Time Subway IoT Ultrasonic Sensors Drawer */}
-        <SubwaySensorDrawer
-          isOpen={isSubwayDrawerOpen}
-          onClose={() => setIsSubwayDrawerOpen(false)}
-          subwaySensors={subwaySensors}
-          onSelectSubway={(sensor) => {
-            setIsSubwayDrawerOpen(false);
-            setDestination({
-              id: sensor.id,
-              name: sensor.name,
-              shortName: sensor.name.split(' ')[0],
-              area: sensor.area,
-              coords: sensor.coords,
-              elevationMsl: sensor.elevationMsl,
-              type: 'hub'
-            });
-            setSelectedRouteId(null);
-          }}
-        />
-      </main>
+      </div>
     </div>
   );
 }

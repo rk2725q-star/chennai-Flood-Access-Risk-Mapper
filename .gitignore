@@ -17,3 +17,5 @@ Desktop.ini
 node_modules/
 dist/
 .vite/
+scratch/
+scratch_clone/
