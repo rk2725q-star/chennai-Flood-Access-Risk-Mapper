@@ -30,8 +30,12 @@ import { GoogleMapsAIAssistantModal } from './components/GoogleMapsAIAssistantMo
 import { HydrologySimulationModal } from './components/HydrologySimulationModal';
 import { EmergencyDirectoryModal } from './components/EmergencyDirectoryModal';
 import { IncidentReporterModal } from './components/IncidentReporterModal';
+import { ThreeDDigitalTwin } from './components/ThreeDDigitalTwin';
 
 export function App() {
+  // View Mode: '3d' (New 3D Digital Twin) or '2d' (Original 2D GIS Map Dashboard)
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
+
   // Navigation & Origin/Destination State
   const [origin, setOrigin] = useState<ChennaiLocationPreset>(CHENNAI_LOCATION_PRESETS[0]); // Velachery
   const [destination, setDestination] = useState<ChennaiLocationPreset>(CHENNAI_LOCATION_PRESETS[6]); // Apollo Hospitals
@@ -192,8 +196,24 @@ export function App() {
     }
   };
 
+  // 1. Render New 3D Digital Twin Frontend as primary experience
+  if (viewMode === '3d') {
+    return <ThreeDDigitalTwin onSwitchTo2D={() => setViewMode('2d')} />;
+  }
+
+  // 2. Original 2D GIS Leaflet Dashboard (Completely preserved)
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none flex flex-col">
+      {/* Switch to 3D Digital Twin Floating Quick Button */}
+      <button
+        onClick={() => setViewMode('3d')}
+        className="fixed top-3.5 right-4 z-40 bg-gradient-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-extrabold px-3.5 py-2 rounded-xl shadow-2xl flex items-center gap-2 text-xs border border-sky-400/40 backdrop-blur-md transition cursor-pointer group"
+        title="Switch to 3D Digital Twin Flood Model"
+      >
+        <span className="text-base group-hover:rotate-12 transition">🌐</span>
+        <span>Switch to 3D Digital Twin</span>
+      </button>
+
       {/* Full-screen Leaflet Map without any top border or top header banner */}
       <main className="relative flex-1 w-full h-full overflow-hidden">
         <MapComponent
