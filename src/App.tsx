@@ -26,6 +26,10 @@ import {
 import { MapComponent } from './components/MapComponent';
 import { ProjectControlPanel } from './components/ProjectControlPanel';
 import { GoogleDriveNavigationOverlay } from './components/GoogleDriveNavigationOverlay';
+import { GoogleMapsAIAssistantModal } from './components/GoogleMapsAIAssistantModal';
+import { HydrologySimulationModal } from './components/HydrologySimulationModal';
+import { EmergencyDirectoryModal } from './components/EmergencyDirectoryModal';
+import { IncidentReporterModal } from './components/IncidentReporterModal';
 
 export function App() {
   // Navigation & Origin/Destination State
@@ -38,7 +42,7 @@ export function App() {
   const [navigationStepIndex, setNavigationStepIndex] = useState(0);
 
   // Background Hydrology Simulation Parameters
-  const [engineParams] = useState<EngineParams>({
+  const [engineParams, setEngineParams] = useState<EngineParams>({
     rainfallRateMmHr: 110,
     cumulative24hMm: 210,
     stormCenter: [12.9800, 80.2200],
@@ -46,6 +50,15 @@ export function App() {
     chembarambakkamDischargeCusecs: 12500,
     highTideActive: true
   });
+
+  // Modal Dialog States
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showHydrology, setShowHydrology] = useState(false);
+  const [showEmergency, setShowEmergency] = useState(false);
+  const [showIncident, setShowIncident] = useState(false);
+
+  // Dynamic Incidents
+  const [incidents, setIncidents] = useState<IncidentReport[]>(INITIAL_INCIDENTS);
 
   // Panel collapse
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
@@ -188,7 +201,7 @@ export function App() {
           waterBodies={simulatedWaterBodies}
           facilities={CRITICAL_FACILITIES}
           subways={SUBMERGED_SUBWAYS}
-          incidents={INITIAL_INCIDENTS}
+          incidents={incidents}
           reservoirs={RESERVOIR_DATA}
           selectedRoute={null}
           dynamicRoute={activeRoute}
@@ -252,6 +265,10 @@ export function App() {
             onFocusRoadOnMap={handleFocusRoad}
             isCollapsed={isPanelCollapsed}
             onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            onOpenAIAssistant={() => setShowAIAssistant(true)}
+            onOpenHydrology={() => setShowHydrology(true)}
+            onOpenEmergency={() => setShowEmergency(true)}
+            onOpenIncident={() => setShowIncident(true)}
           />
         )}
 
@@ -268,6 +285,59 @@ export function App() {
             }}
           />
         )}
+
+        {/* Tactical Chennai Flood AI Assistant Modal */}
+        <GoogleMapsAIAssistantModal
+          isOpen={showAIAssistant}
+          onClose={() => setShowAIAssistant(false)}
+          userCoords={origin.coords}
+          onSelectDestinationName={(destName) => {
+            const match = CHENNAI_LOCATION_PRESETS.find(
+              (p) =>
+                p.name.toLowerCase().includes(destName.toLowerCase()) ||
+                p.shortName.toLowerCase().includes(destName.toLowerCase())
+            );
+            if (match) {
+              setDestination(match);
+              setSelectedRouteId(null);
+            }
+          }}
+        />
+
+        {/* Hydrological Rainfall & Lake Surge Simulator Modal */}
+        <HydrologySimulationModal
+          isOpen={showHydrology}
+          onClose={() => setShowHydrology(false)}
+          params={engineParams}
+          onUpdateParams={setEngineParams}
+          onReset={() => {
+            setEngineParams({
+              rainfallRateMmHr: 110,
+              cumulative24hMm: 210,
+              stormCenter: [12.9800, 80.2200],
+              stormRadiusKm: 14,
+              chembarambakkamDischargeCusecs: 12500,
+              highTideActive: true
+            });
+          }}
+          criticalRoadsCount={rankedRoads.filter((r) => r.expectedDepthCm >= 30).length}
+        />
+
+        {/* Chennai Emergency Helplines & Disaster Directory Modal */}
+        <EmergencyDirectoryModal
+          isOpen={showEmergency}
+          onClose={() => setShowEmergency(false)}
+        />
+
+        {/* Citizen Real-Time Field Flood Incident / SOS Reporter Modal */}
+        <IncidentReporterModal
+          isOpen={showIncident}
+          onClose={() => setShowIncident(false)}
+          onSubmitIncident={(newInc) => {
+            setIncidents((prev) => [newInc, ...prev]);
+            setShowIncident(false);
+          }}
+        />
       </main>
     </div>
   );

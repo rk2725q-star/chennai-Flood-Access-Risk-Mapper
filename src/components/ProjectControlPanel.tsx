@@ -19,7 +19,11 @@ import {
   TrendingUp,
   X,
   ShieldCheck,
-  Compass
+  Compass,
+  Sparkles,
+  CloudRain,
+  PhoneCall,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ProjectControlPanelProps {
@@ -38,6 +42,10 @@ interface ProjectControlPanelProps {
   onFocusRoadOnMap: (road: DynamicRoadSegment) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onOpenAIAssistant?: () => void;
+  onOpenHydrology?: () => void;
+  onOpenEmergency?: () => void;
+  onOpenIncident?: () => void;
 }
 
 export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
@@ -55,7 +63,11 @@ export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
   rankedRoads,
   onFocusRoadOnMap,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  onOpenAIAssistant,
+  onOpenHydrology,
+  onOpenEmergency,
+  onOpenIncident
 }) => {
   const [showOriginDropdown, setShowOriginDropdown] = useState(false);
   const [showDestDropdown, setShowDestDropdown] = useState(false);
@@ -132,7 +144,7 @@ export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
     <>
       <div
         id="google-maps-style-sidebar"
-        className="absolute top-4 left-4 z-30 w-[calc(100vw-32px)] sm:w-[380px] max-h-[calc(100vh-32px)] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden text-slate-800 dark:text-slate-100 transition pointer-events-auto"
+        className="absolute top-4 left-4 z-30 w-[calc(100vw-32px)] sm:w-95 max-h-[calc(100vh-32px)] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden text-slate-800 dark:text-slate-100 transition pointer-events-auto"
       >
         {/* Clean Sidebar Header */}
         <div className="px-4 py-2.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-950/60">
@@ -383,6 +395,57 @@ export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
               </div>
               <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">Open &gt;</span>
             </button>
+          </div>
+
+          {/* CHENNAI FLOOD AI TACTICAL ASSISTANT TRIGGER */}
+          {onOpenAIAssistant && (
+            <div className="pt-1">
+              <button
+                id="btn-open-ai-assistant"
+                onClick={onOpenAIAssistant}
+                className="w-full py-2.5 px-3 rounded-xl bg-linear-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-xs font-black flex items-center justify-between shadow-lg shadow-blue-500/20 active:scale-[0.98] transition cursor-pointer border border-blue-400/30"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-200 animate-pulse" />
+                  <span>Chennai Flood AI Assistant</span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-md font-bold">Ask AI &gt;</span>
+              </button>
+            </div>
+          )}
+
+          {/* QUICK FLOOD TOOLS ROW (HYDROLOGY, HELPLINES, SOS) */}
+          <div className="pt-1 grid grid-cols-3 gap-1.5">
+            {onOpenHydrology && (
+              <button
+                onClick={onOpenHydrology}
+                title="Rainfall & Lake Surge Simulator"
+                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+              >
+                <CloudRain className="w-3.5 h-3.5 text-blue-500" />
+                <span>Hydro Sim</span>
+              </button>
+            )}
+            {onOpenEmergency && (
+              <button
+                onClick={onOpenEmergency}
+                title="Emergency Helplines (GCC 1913, 1070)"
+                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+              >
+                <PhoneCall className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Helplines</span>
+              </button>
+            )}
+            {onOpenIncident && (
+              <button
+                onClick={onOpenIncident}
+                title="Report Field Flood Incident / SOS"
+                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                <span>Report SOS</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
