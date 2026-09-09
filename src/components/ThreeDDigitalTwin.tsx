@@ -791,7 +791,7 @@ export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({ onSwitchTo
 
           <button
             onClick={handleRouteSearch}
-            className="bg-gradient-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer shadow-md"
+            className="bg-linear-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition cursor-pointer shadow-md"
           >
             Find Safe Route
           </button>
@@ -884,7 +884,7 @@ export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({ onSwitchTo
             {activeRouteInfo ? (
               <div className="space-y-2.5">
                 {activeRouteInfo.isDiverted && (
-                  <div className="bg-gradient-to-br from-amber-950/80 to-rose-950/80 border border-amber-600/50 rounded-xl p-3 text-xs leading-relaxed text-amber-200">
+                  <div className="bg-linear-to-br from-amber-950/80 to-rose-950/80 border border-amber-600/50 rounded-xl p-3 text-xs leading-relaxed text-amber-200">
                     ⚠️ <strong>DIVERSION ACTIVE:</strong> Fastest direct route crosses{' '}
                     <strong>{activeRouteInfo.diversionCount} high-risk corridor(s)</strong>. A safer elevated detour is
                     highlighted in green.
@@ -1058,7 +1058,7 @@ export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({ onSwitchTo
           <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs">
             <button
               onClick={handleBroadcastAll}
-              className="w-full bg-gradient-to-r from-rose-600 to-amber-600 hover:brightness-110 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition cursor-pointer shadow-lg flex items-center justify-center gap-2"
+              className="w-full bg-linear-to-r from-rose-600 to-amber-600 hover:brightness-110 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition cursor-pointer shadow-lg flex items-center justify-center gap-2"
             >
               <Radio className="w-4 h-4" />
               <span>Broadcast Alerts for High-Risk Corridors</span>

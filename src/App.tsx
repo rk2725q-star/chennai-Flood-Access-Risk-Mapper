@@ -207,7 +207,7 @@ export function App() {
       {/* Switch to 3D Digital Twin Floating Quick Button */}
       <button
         onClick={() => setViewMode('3d')}
-        className="fixed top-3.5 right-4 z-40 bg-gradient-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-extrabold px-3.5 py-2 rounded-xl shadow-2xl flex items-center gap-2 text-xs border border-sky-400/40 backdrop-blur-md transition cursor-pointer group"
+        className="fixed top-3.5 right-4 z-40 bg-linear-to-r from-blue-600 to-sky-500 hover:brightness-110 text-white font-extrabold px-3.5 py-2 rounded-xl shadow-2xl flex items-center gap-2 text-xs border border-sky-400/40 backdrop-blur-md transition cursor-pointer group"
         title="Switch to 3D Digital Twin Flood Model"
       >
         <span className="text-base group-hover:rotate-12 transition">🌐</span>

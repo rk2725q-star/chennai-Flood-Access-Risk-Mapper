@@ -938,7 +938,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   };
 
   return (
-    <div className={`relative w-full h-full min-h-[420px] overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans select-none ${is3D ? 'map-3d-active' : ''}`}>
+    <div className={`relative w-full h-full min-h-105 overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans select-none ${is3D ? 'map-3d-active' : ''}`}>
       {/* Map DOM Element */}
       <div ref={mapContainerRef} id="chennai-flood-map" className="w-full h-full z-10" />
 
