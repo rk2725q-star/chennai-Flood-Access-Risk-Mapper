@@ -126,12 +126,77 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const roadsGroupRef = useRef<L.LayerGroup | null>(null);
   const routeLayerGroupRef = useRef<L.LayerGroup | null>(null);
   
-  const [mapTheme, setMapTheme] = useState<'streets' | 'satellite' | 'terrain' | 'light'>('streets');
+  const [mapTheme, setMapTheme] = useState<'streets' | 'satellite' | 'terrain' | 'dark' | 'light'>('streets');
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [is3D, setIs3D] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
+
+  // Reliable Basemap Tile Configurations (with subdomains, fast CDN, zero 403 blocks)
+  const TILE_CONFIGS = {
+    streets: {
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      subdomains: ['a', 'b', 'c', 'd'],
+      maxZoom: 20,
+      maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      subdomains: undefined,
+      maxZoom: 19,
+      maxNativeZoom: 18,
+      attribution: '&copy; Esri &mdash; Maxar, Earthstar Geographics'
+    },
+    terrain: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      subdomains: undefined,
+      maxZoom: 19,
+      maxNativeZoom: 18,
+      attribution: '&copy; Esri &mdash; USGS, NOAA'
+    },
+    dark: {
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      subdomains: ['a', 'b', 'c', 'd'],
+      maxZoom: 20,
+      maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+    },
+    light: {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c'],
+      maxZoom: 19,
+      maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }
+  };
+
+  // Helper to create tile layer with fallback handler
+  const createTileLayer = (theme: 'streets' | 'satellite' | 'terrain' | 'dark' | 'light') => {
+    const cfg = TILE_CONFIGS[theme];
+    const layer = L.tileLayer(cfg.url, {
+      attribution: cfg.attribution,
+      maxZoom: cfg.maxZoom,
+      maxNativeZoom: cfg.maxNativeZoom,
+      subdomains: cfg.subdomains || 'abc',
+      keepBuffer: 6,
+      updateWhenIdle: false,
+      updateWhenZooming: true,
+      crossOrigin: true
+    });
+
+    layer.on('tileerror', (errorTileEvent: any) => {
+      const tileImg = errorTileEvent.tile as HTMLImageElement;
+      if (tileImg && !tileImg.dataset.hasFallback) {
+        tileImg.dataset.hasFallback = 'true';
+        const { x, y, z } = errorTileEvent.coords;
+        tileImg.src = `https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`;
+      }
+    });
+
+    return layer;
+  };
 
   // Automatically activate 3D perspective mode when driving navigation starts
   useEffect(() => {
@@ -156,23 +221,17 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       zoomControl: false,
     });
 
-    const tileUrls: Record<string, string> = {
-      streets: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-      satellite: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-      terrain: 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
-      light: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    };
-
-    const initialTiles = L.tileLayer(tileUrls[mapTheme], {
-      attribution: '&copy; Google Maps &copy; OpenStreetMap contributors',
-      maxZoom: 20,
-    }).addTo(map);
-
+    const initialTiles = createTileLayer(mapTheme).addTo(map);
     tileLayerRef.current = initialTiles;
     layersGroupRef.current = L.layerGroup().addTo(map);
     roadsGroupRef.current = L.layerGroup().addTo(map);
     routeLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
+
+    // Trigger immediate & progressive invalidateSize so container size settles perfectly
+    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(() => map.invalidateSize(), 400);
+    setTimeout(() => map.invalidateSize(), 1000);
 
     // Google Maps interactive click: Set origin or destination directly from map
     map.on('click', (e: L.LeafletMouseEvent) => {
@@ -227,18 +286,47 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     };
   }, []);
 
-  // Update Tile Layer Theme
+  // Ensure map adjusts seamlessly when container resizes or browser window dimensions change
   useEffect(() => {
-    if (!mapInstanceRef.current || !tileLayerRef.current) return;
-    
-    const tileUrls: Record<string, string> = {
-      streets: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-      satellite: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-      terrain: 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
-      light: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    };
+    if (!mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      mapInstanceRef.current?.invalidateSize({ debounceMoveend: true });
+    });
+    observer.observe(mapContainerRef.current);
 
-    tileLayerRef.current.setUrl(tileUrls[mapTheme]);
+    const handleWindowResize = () => {
+      mapInstanceRef.current?.invalidateSize();
+    };
+    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('orientationchange', handleWindowResize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener('orientationchange', handleWindowResize);
+    };
+  }, []);
+
+  // Invalidate map layout when 3D or Driving Mode transitions
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      mapInstanceRef.current?.invalidateSize();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [is3D, isDriving]);
+
+  // Update Tile Layer Theme cleanly without orphaned layers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+
+    const newTiles = createTileLayer(mapTheme).addTo(map);
+    newTiles.bringToBack();
+    tileLayerRef.current = newTiles;
   }, [mapTheme]);
 
   // Center on Selected Zone if changed
@@ -895,7 +983,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
                       : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
-                  <span>Google Road</span>
+                  <span>Street Map</span>
                 </button>
                 <button
                   onClick={() => setMapTheme('satellite')}
@@ -915,17 +1003,27 @@ export const MapComponent: React.FC<MapComponentProps> = ({
                       : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
-                  <span>Terrain</span>
+                  <span>Topography</span>
+                </button>
+                <button
+                  onClick={() => setMapTheme('dark')}
+                  className={`p-2 rounded-xl text-left text-xs font-semibold flex items-center gap-1.5 transition ${
+                    mapTheme === 'dark'
+                      ? 'bg-blue-600 text-white shadow-xs font-bold'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <span>Dark Ops</span>
                 </button>
                 <button
                   onClick={() => setMapTheme('light')}
-                  className={`p-2 rounded-xl text-left text-xs font-semibold flex items-center gap-1.5 transition ${
+                  className={`col-span-2 p-2 rounded-xl text-left text-xs font-semibold flex items-center gap-1.5 transition ${
                     mapTheme === 'light'
                       ? 'bg-blue-600 text-white shadow-xs font-bold'
                       : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
-                  <span>Clean OSM</span>
+                  <span>Clean OpenStreetMap</span>
                 </button>
               </div>
 
