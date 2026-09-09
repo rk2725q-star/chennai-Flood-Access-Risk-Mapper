@@ -23,7 +23,9 @@ import {
   Sparkles,
   CloudRain,
   PhoneCall,
-  AlertTriangle
+  AlertTriangle,
+  Waves,
+  Radio
 } from 'lucide-react';
 
 interface ProjectControlPanelProps {
@@ -46,6 +48,7 @@ interface ProjectControlPanelProps {
   onOpenHydrology?: () => void;
   onOpenEmergency?: () => void;
   onOpenIncident?: () => void;
+  onOpenSubwaySensors?: () => void;
 }
 
 export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
@@ -67,7 +70,8 @@ export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
   onOpenAIAssistant,
   onOpenHydrology,
   onOpenEmergency,
-  onOpenIncident
+  onOpenIncident,
+  onOpenSubwaySensors
 }) => {
   const [showOriginDropdown, setShowOriginDropdown] = useState(false);
   const [showDestDropdown, setShowDestDropdown] = useState(false);
@@ -414,36 +418,46 @@ export const ProjectControlPanel: React.FC<ProjectControlPanelProps> = ({
             </div>
           )}
 
-          {/* QUICK FLOOD TOOLS ROW (HYDROLOGY, HELPLINES, SOS) */}
-          <div className="pt-1 grid grid-cols-3 gap-1.5">
+          {/* QUICK FLOOD TOOLS ROW (HYDROLOGY, SUBWAYS, HELPLINES, SOS) */}
+          <div className="pt-1 grid grid-cols-4 gap-1.5">
             {onOpenHydrology && (
               <button
                 onClick={onOpenHydrology}
                 title="Rainfall & Lake Surge Simulator"
-                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+                className="py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
               >
                 <CloudRain className="w-3.5 h-3.5 text-blue-500" />
-                <span>Hydro Sim</span>
+                <span className="truncate">Hydro</span>
+              </button>
+            )}
+            {onOpenSubwaySensors && (
+              <button
+                onClick={onOpenSubwaySensors}
+                title="Subway IoT Ultrasonic Depth Telemetry"
+                className="py-1.5 px-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-rose-200 dark:border-rose-900/60 transition cursor-pointer"
+              >
+                <Radio className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                <span className="truncate">Subways</span>
               </button>
             )}
             {onOpenEmergency && (
               <button
                 onClick={onOpenEmergency}
                 title="Emergency Helplines (GCC 1913, 1070)"
-                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+                className="py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
               >
                 <PhoneCall className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Helplines</span>
+                <span className="truncate">Helpline</span>
               </button>
             )}
             {onOpenIncident && (
               <button
                 onClick={onOpenIncident}
                 title="Report Field Flood Incident / SOS"
-                className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
+                className="py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold flex flex-col items-center justify-center gap-1 border border-slate-200/80 dark:border-slate-700/80 transition cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                <span>Report SOS</span>
+                <span className="truncate">SOS</span>
               </button>
             )}
           </div>

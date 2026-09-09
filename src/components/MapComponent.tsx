@@ -13,6 +13,8 @@ import {
   DynamicRouteResult,
   DynamicRoadSegment
 } from '../utils/floodEngine';
+import { fetchLiveRadarData, RadarData } from '../utils/liveRadarService';
+import { SubwaySensorTelemetry } from '../utils/telemetryService';
 import {
   Layers,
   ZoomIn,
@@ -27,7 +29,12 @@ import {
   MapPin,
   Eye,
   EyeOff,
-  Sparkles
+  Sparkles,
+  Radio,
+  Play,
+  Pause,
+  Activity,
+  Gauge
 } from 'lucide-react';
 
 interface MapComponentProps {
@@ -67,6 +74,11 @@ interface MapComponentProps {
   onOpenSimulation?: () => void;
   onOpenRankings?: () => void;
   onOpenAIAssistant?: () => void;
+  showRadarLayer?: boolean;
+  onToggleRadarLayer?: (val: boolean) => void;
+  onOpenSubwaySensors?: () => void;
+  subwaySensors?: SubwaySensorTelemetry[];
+  onSelectSubwaySensor?: (sensor: SubwaySensorTelemetry) => void;
   rainfallRate?: number;
   stormCenter?: [number, number];
   stormRadiusKm?: number;
@@ -112,6 +124,11 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   onOpenSimulation,
   onOpenRankings,
   onOpenAIAssistant,
+  showRadarLayer,
+  onToggleRadarLayer,
+  onOpenSubwaySensors,
+  subwaySensors,
+  onSelectSubwaySensor,
   rainfallRate = 120,
   stormCenter,
   stormRadiusKm = 14,
@@ -132,6 +149,86 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const [is3D, setIs3D] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
+
+  // Live Doppler Weather Radar (RainViewer) State
+  const [isRadarActive, setIsRadarActive] = useState(false);
+  const [radarData, setRadarData] = useState<RadarData | null>(null);
+  const [currentRadarIndex, setCurrentRadarIndex] = useState<number>(0);
+  const [isRadarPlaying, setIsRadarPlaying] = useState<boolean>(true);
+  const [radarOpacity, setRadarOpacity] = useState<number>(0.7);
+  const [isRadarLoading, setIsRadarLoading] = useState<boolean>(false);
+  const radarTileLayerRef = useRef<L.TileLayer | null>(null);
+
+  // Sync external radar toggle with internal state
+  useEffect(() => {
+    if (showRadarLayer !== undefined) {
+      setIsRadarActive(showRadarLayer);
+    }
+  }, [showRadarLayer]);
+
+  const handleToggleRadar = (val: boolean) => {
+    setIsRadarActive(val);
+    if (onToggleRadarLayer) onToggleRadarLayer(val);
+  };
+
+  // Load live RainViewer radar telemetry
+  useEffect(() => {
+    if (!isRadarActive) return;
+    if (!radarData) {
+      setIsRadarLoading(true);
+      fetchLiveRadarData().then((data) => {
+        setRadarData(data);
+        setIsRadarLoading(false);
+        if (data.frames.length > 0) {
+          const pastFrames = data.frames.filter((f) => !f.isNowcast);
+          const defaultIdx = pastFrames.length > 0 ? pastFrames.length - 1 : data.frames.length - 1;
+          setCurrentRadarIndex(defaultIdx);
+        }
+      }).catch((err) => {
+        console.error('Failed to load radar:', err);
+        setIsRadarLoading(false);
+      });
+    }
+  }, [isRadarActive, radarData]);
+
+  // Leaflet tile layer binding for live Doppler frames
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (!isRadarActive || !radarData || radarData.frames.length === 0) {
+      if (radarTileLayerRef.current) {
+        radarTileLayerRef.current.remove();
+        radarTileLayerRef.current = null;
+      }
+      return;
+    }
+
+    const activeFrame = radarData.frames[currentRadarIndex] || radarData.latestFrame;
+    if (!activeFrame) return;
+
+    if (radarTileLayerRef.current) {
+      radarTileLayerRef.current.setUrl(activeFrame.url);
+      radarTileLayerRef.current.setOpacity(radarOpacity);
+    } else {
+      const layer = L.tileLayer(activeFrame.url, {
+        opacity: radarOpacity,
+        zIndex: 350,
+        maxZoom: 19,
+        attribution: '&copy; RainViewer Doppler'
+      }).addTo(map);
+      radarTileLayerRef.current = layer;
+    }
+  }, [isRadarActive, radarData, currentRadarIndex, radarOpacity]);
+
+  // Radar playback timeline animation
+  useEffect(() => {
+    if (!isRadarActive || !isRadarPlaying || !radarData || radarData.frames.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentRadarIndex((prev) => (prev + 1) % radarData.frames.length);
+    }, 1400);
+    return () => clearInterval(interval);
+  }, [isRadarActive, isRadarPlaying, radarData]);
 
   // Reliable Basemap Tile Configurations (with subdomains, fast CDN, zero 403 blocks)
   const TILE_CONFIGS = {
@@ -537,21 +634,30 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       });
     }
 
-    // 3. Draw Submerged Subways
+    // 3. Draw Submerged Subways (with Live Ultrasonic IoT Sensor Data)
     if (showSubways) {
       subways.forEach((subway) => {
-        const isClosed = subway.status === 'closed_submerged';
+        const matchingSensor = subwaySensors?.find(
+          (s) =>
+            s.name.toLowerCase().includes(subway.name.toLowerCase()) ||
+            subway.name.toLowerCase().includes(s.name.toLowerCase()) ||
+            s.id.toLowerCase().includes(subway.id.toLowerCase())
+        );
+        const depthCm = matchingSensor ? matchingSensor.waterDepthCm : subway.waterDepthCm;
+        const isClosed = matchingSensor ? matchingSensor.status === 'submerged_closed' : subway.status === 'closed_submerged';
+        const isCaution = matchingSensor ? matchingSensor.status === 'caution' : subway.status === 'waterlogged_passable';
+
         const subwayIcon = L.divIcon({
           className: 'custom-subway-icon',
           html: `
             <div class="relative flex items-center justify-center w-7 h-7 rounded-full border-2 ${
-              isClosed ? 'bg-red-600 border-white text-white animate-pulse' : 'bg-amber-500 border-white text-slate-900'
+              isClosed ? 'bg-red-600 border-white text-white animate-pulse' : isCaution ? 'bg-amber-500 border-white text-slate-900' : 'bg-emerald-600 border-white text-white'
             } shadow-lg cursor-pointer">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
               </svg>
               <div class="absolute -bottom-4 bg-slate-900/90 text-white font-mono text-[9px] px-1 rounded whitespace-nowrap border border-slate-700 shadow">
-                ${subway.waterDepthCm}cm
+                ${depthCm}cm
               </div>
             </div>
           `,
@@ -560,13 +666,19 @@ export const MapComponent: React.FC<MapComponentProps> = ({
         });
 
         const marker = L.marker(subway.center, { icon: subwayIcon });
-        marker.on('click', () => onSelectSubway(subway));
+        marker.on('click', () => {
+          onSelectSubway(subway);
+          if (matchingSensor && onSelectSubwaySensor) {
+            onSelectSubwaySensor(matchingSensor);
+          }
+        });
         marker.bindTooltip(`
           <div style="font-size: 11px;">
-            <strong style="color: #ef4444">${subway.name}</strong><br/>
-            Status: <strong>${subway.status === 'closed_submerged' ? 'CLOSED / SUBMERGED' : 'WATERLOGGED'}</strong><br/>
-            Depth: <strong>${subway.waterDepthCm} cm</strong><br/>
-            Alternate: ${subway.alternateRoute}
+            <strong style="color: ${isClosed ? '#ef4444' : isCaution ? '#f59e0b' : '#10b981'}">${subway.name}</strong><br/>
+            Status: <strong>${isClosed ? '⛔ CLOSED / SUBMERGED' : isCaution ? '⚠️ WATERLOGGED' : '✅ CLEAR'}</strong><br/>
+            Ultrasonic Depth: <strong>${depthCm} cm</strong> (${(depthCm / 30.48).toFixed(1)} ft)<br/>
+            ${matchingSensor ? `Accumulation Rate: <strong>+${matchingSensor.rateOfRiseCmHr} cm/hr</strong><br/>Pump: <strong>${matchingSensor.pumpStatus.toUpperCase()} (${matchingSensor.pumpCapacityLps} L/s)</strong><br/>` : ''}
+            Bypass: <strong>${matchingSensor?.alternateBypassName || subway.alternateRoute}</strong>
           </div>
         `);
         layerGroup.addLayer(marker);
@@ -650,6 +762,8 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     showFacilities,
     showSubways,
     showIncidents,
+    subwaySensors,
+    onSelectSubwaySensor,
     stormCenter,
     stormRadiusKm,
     rainfallRate,
@@ -942,6 +1056,92 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       {/* Map DOM Element */}
       <div ref={mapContainerRef} id="chennai-flood-map" className="w-full h-full z-10" />
 
+      {/* Floating Live Doppler Radar Control & Timeline Scrubber HUD */}
+      {isRadarActive && radarData && radarData.frames.length > 0 && (
+        <div className="absolute top-3.5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto bg-slate-950/92 border border-sky-500/40 backdrop-blur-xl px-3.5 py-2 rounded-2xl shadow-2xl flex flex-wrap items-center gap-2.5 text-white max-w-[94vw] sm:max-w-xl animate-fade-in">
+          {/* Live Doppler Radar Pulse Badge */}
+          <div className="flex items-center gap-2 pr-2 border-r border-slate-800">
+            <div className="relative flex items-center justify-center w-3 h-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping absolute"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            </div>
+            <div>
+              <div className="text-[11px] font-black tracking-tight text-white flex items-center gap-1">
+                <span>Doppler Radar</span>
+                {isRadarLoading && <span className="text-[9px] text-sky-400 font-normal animate-pulse">Syncing...</span>}
+              </div>
+              <div className="text-[9px] text-slate-400">RainViewer Live Scan</div>
+            </div>
+          </div>
+
+          {/* Play / Pause Toggle */}
+          <button
+            onClick={() => setIsRadarPlaying(!isRadarPlaying)}
+            className="p-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition cursor-pointer shadow-xs"
+            title={isRadarPlaying ? 'Pause Radar Loop' : 'Play Radar Loop'}
+          >
+            {isRadarPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Frame Timestamp & Forecast/Past badge */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs font-black text-sky-300">
+              {radarData.frames[currentRadarIndex]?.timeLabel || 'Live'}
+            </span>
+            <span
+              className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                radarData.frames[currentRadarIndex]?.isNowcast
+                  ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                  : 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+              }`}
+            >
+              {radarData.frames[currentRadarIndex]?.isNowcast ? 'Nowcast' : 'Observed'}
+            </span>
+          </div>
+
+          {/* Frame Step Scrubber / Dots */}
+          <div className="flex items-center gap-1">
+            {radarData.frames.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setCurrentRadarIndex(idx);
+                  setIsRadarPlaying(false);
+                }}
+                className={`h-2 rounded-full transition-all cursor-pointer ${
+                  idx === currentRadarIndex
+                    ? 'w-4 bg-sky-400'
+                    : 'w-1.5 bg-slate-700 hover:bg-slate-500'
+                }`}
+                title={`Frame ${idx + 1}/${radarData.frames.length}`}
+              />
+            ))}
+          </div>
+
+          {/* Opacity slider & Close */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+            <span className="text-[9px] text-slate-400 font-mono">{Math.round(radarOpacity * 100)}%</span>
+            <input
+              type="range"
+              min="0.2"
+              max="1"
+              step="0.05"
+              value={radarOpacity}
+              onChange={(e) => setRadarOpacity(parseFloat(e.target.value))}
+              className="w-12 accent-sky-400 cursor-pointer"
+              title="Radar Layer Opacity"
+            />
+            <button
+              onClick={() => handleToggleRadar(false)}
+              className="p-1 text-slate-400 hover:text-white text-xs cursor-pointer ml-0.5"
+              title="Close Radar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Floating Bottom-Left Google Maps Layers Toggle Widget & Clean Legend */}
       <div className="absolute bottom-3 left-3 z-20 pointer-events-auto flex items-end gap-2.5">
         <div className="relative">
@@ -1116,6 +1316,48 @@ export const MapComponent: React.FC<MapComponentProps> = ({
                     />
                   </label>
                 )}
+
+                {/* Real-time Doppler Weather Radar Toggle */}
+                <label className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-xs">
+                  <span className="font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      {isRadarActive && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      )}
+                      <span
+                        className={`relative inline-flex rounded-full h-2 w-2 ${
+                          isRadarActive ? 'bg-emerald-500' : 'bg-slate-400'
+                        }`}
+                      ></span>
+                    </span>
+                    <span>📡 Live Doppler Radar</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isRadarActive}
+                    onChange={(e) => handleToggleRadar(e.target.checked)}
+                    className="rounded accent-sky-500"
+                  />
+                </label>
+
+                {/* Open Subway IoT Ultrasonic Sensor Drawer */}
+                {onOpenSubwaySensors && (
+                  <button
+                    onClick={() => {
+                      setShowLayerMenu(false);
+                      onOpenSubwaySensors();
+                    }}
+                    className="w-full mt-1.5 py-1.5 px-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between transition cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Radio className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                      <span>Subway IoT Sensors</span>
+                    </span>
+                    <span className="text-[10px] bg-rose-600 text-white px-1.5 py-0.2 rounded font-black">
+                      {subwaySensors?.filter((s) => s.status === 'submerged_closed').length ?? 4} CLOSED
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1162,6 +1404,38 @@ export const MapComponent: React.FC<MapComponentProps> = ({
 
       {/* Floating Bottom-Right Controls */}
       <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-2 pointer-events-auto">
+        {/* Live Doppler Radar Quick Toggle Button */}
+        <button
+          id="toggle-radar-btn"
+          onClick={() => handleToggleRadar(!isRadarActive)}
+          title={isRadarActive ? "Hide Live Doppler Radar" : "Show Live Doppler Radar (RainViewer)"}
+          className={`relative w-10 h-10 rounded-full font-bold text-xs shadow-lg border flex items-center justify-center transition cursor-pointer ${
+            isRadarActive
+              ? 'bg-sky-600 text-white border-sky-400 shadow-sky-500/30 ring-2 ring-sky-400/50'
+              : 'bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-slate-100 border-slate-200/90 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Radio className={`w-4 h-4 ${isRadarActive ? 'text-white animate-pulse' : 'text-sky-500'}`} />
+          {isRadarActive && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900"></span>
+          )}
+        </button>
+
+        {/* Subway IoT Sensors Quick Trigger Button */}
+        {onOpenSubwaySensors && (
+          <button
+            id="toggle-subway-sensors-btn"
+            onClick={onOpenSubwaySensors}
+            title="Open Subway IoT Water Level Sensors"
+            className="relative w-10 h-10 rounded-full font-bold text-xs shadow-lg border bg-white/95 dark:bg-slate-900/95 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-slate-800 flex items-center justify-center transition cursor-pointer"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span className="absolute -top-1 -right-1 min-w-4.5 h-4.5 bg-rose-600 text-white rounded-full text-[9px] font-black flex items-center justify-center px-1 border border-white">
+              {subwaySensors?.filter((s) => s.status === 'submerged_closed').length ?? 4}
+            </span>
+          </button>
+        )}
+
         {/* 3D / 2D Perspective Toggle Button */}
         <button
           id="toggle-3d-btn"

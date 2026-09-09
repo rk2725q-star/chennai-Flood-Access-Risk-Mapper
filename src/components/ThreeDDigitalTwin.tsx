@@ -17,8 +17,12 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+import { SubwaySensorTelemetry } from '../utils/telemetryService';
+
 interface ThreeDDigitalTwinProps {
   onSwitchTo2D?: () => void;
+  onOpenSubwaySensors?: () => void;
+  subwaySensors?: SubwaySensorTelemetry[];
 }
 
 interface NodeDef {
@@ -40,7 +44,11 @@ interface EdgeDef {
   mid?: THREE.Vector3;
 }
 
-export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({ onSwitchTo2D }) => {
+export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({
+  onSwitchTo2D,
+  onOpenSubwaySensors,
+  subwaySensors
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // App states
@@ -805,6 +813,18 @@ export const ThreeDDigitalTwin: React.FC<ThreeDDigitalTwinProps> = ({ onSwitchTo
             >
               <Layers className="w-3.5 h-3.5 text-sky-400" />
               <span>🗺️ Switch to 2D GIS Map</span>
+            </button>
+          )}
+
+          {/* Subway IoT Ultrasonic Sensor Quick Trigger */}
+          {onOpenSubwaySensors && (
+            <button
+              onClick={onOpenSubwaySensors}
+              className="ml-1 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-700 text-rose-300 font-semibold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer"
+              title="Open Subway IoT Ultrasonic Sensor Network"
+            >
+              <Radio className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+              <span>🚨 Subways ({subwaySensors?.filter((s) => s.status === 'submerged_closed').length ?? 4} Closed)</span>
             </button>
           )}
         </div>

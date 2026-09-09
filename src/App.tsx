@@ -31,6 +31,11 @@ import { HydrologySimulationModal } from './components/HydrologySimulationModal'
 import { EmergencyDirectoryModal } from './components/EmergencyDirectoryModal';
 import { IncidentReporterModal } from './components/IncidentReporterModal';
 import { ThreeDDigitalTwin } from './components/ThreeDDigitalTwin';
+import { SubwaySensorDrawer } from './components/SubwaySensorDrawer';
+import {
+  INITIAL_SUBWAY_SENSORS,
+  SubwaySensorTelemetry
+} from './utils/telemetryService';
 
 export function App() {
   // View Mode: '3d' (New 3D Digital Twin) or '2d' (Original 2D GIS Map Dashboard)
@@ -60,6 +65,11 @@ export function App() {
   const [showHydrology, setShowHydrology] = useState(false);
   const [showEmergency, setShowEmergency] = useState(false);
   const [showIncident, setShowIncident] = useState(false);
+
+  // Real-Time Intelligence: Subway IoT Drawer & Doppler Radar
+  const [isSubwayDrawerOpen, setIsSubwayDrawerOpen] = useState(false);
+  const [subwaySensors, setSubwaySensors] = useState<SubwaySensorTelemetry[]>(INITIAL_SUBWAY_SENSORS);
+  const [showRadarLayer, setShowRadarLayer] = useState(false);
 
   // Dynamic Incidents
   const [incidents, setIncidents] = useState<IncidentReport[]>(INITIAL_INCIDENTS);
@@ -198,7 +208,20 @@ export function App() {
 
   // 1. Render New 3D Digital Twin Frontend as primary experience
   if (viewMode === '3d') {
-    return <ThreeDDigitalTwin onSwitchTo2D={() => setViewMode('2d')} />;
+    return (
+      <>
+        <ThreeDDigitalTwin
+          onSwitchTo2D={() => setViewMode('2d')}
+          onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
+          subwaySensors={subwaySensors}
+        />
+        <SubwaySensorDrawer
+          isOpen={isSubwayDrawerOpen}
+          onClose={() => setIsSubwayDrawerOpen(false)}
+          subwaySensors={subwaySensors}
+        />
+      </>
+    );
   }
 
   // 2. Original 2D GIS Leaflet Dashboard (Completely preserved)
@@ -256,6 +279,11 @@ export function App() {
           focusedRoad={focusedRoad}
           isDriving={isDriving}
           navigationStepIndex={navigationStepIndex}
+          showRadarLayer={showRadarLayer}
+          onToggleRadarLayer={setShowRadarLayer}
+          onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
+          subwaySensors={subwaySensors}
+          onSelectSubwaySensor={() => setIsSubwayDrawerOpen(true)}
         />
 
         {/* Clean Google Maps Style Search & Safe Routes Panel (when not in active drive mode) */}
@@ -289,6 +317,7 @@ export function App() {
             onOpenHydrology={() => setShowHydrology(true)}
             onOpenEmergency={() => setShowEmergency(true)}
             onOpenIncident={() => setShowIncident(true)}
+            onOpenSubwaySensors={() => setIsSubwayDrawerOpen(true)}
           />
         )}
 
@@ -356,6 +385,26 @@ export function App() {
           onSubmitIncident={(newInc) => {
             setIncidents((prev) => [newInc, ...prev]);
             setShowIncident(false);
+          }}
+        />
+
+        {/* Real-Time Subway IoT Ultrasonic Sensors Drawer */}
+        <SubwaySensorDrawer
+          isOpen={isSubwayDrawerOpen}
+          onClose={() => setIsSubwayDrawerOpen(false)}
+          subwaySensors={subwaySensors}
+          onSelectSubway={(sensor) => {
+            setIsSubwayDrawerOpen(false);
+            setDestination({
+              id: sensor.id,
+              name: sensor.name,
+              shortName: sensor.name.split(' ')[0],
+              area: sensor.area,
+              coords: sensor.coords,
+              elevationMsl: sensor.elevationMsl,
+              type: 'hub'
+            });
+            setSelectedRouteId(null);
           }}
         />
       </main>
