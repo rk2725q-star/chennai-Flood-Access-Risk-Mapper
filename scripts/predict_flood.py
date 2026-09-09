@@ -271,8 +271,23 @@ def main():
     parser.add_argument("--road", type=str, default=None, help="Inspect specific road name (e.g. 'Velachery', 'GST Road')")
     parser.add_argument("--route", nargs=2, metavar=("START", "DEST"), help="Compute safe alternate route avoiding flood roads")
     parser.add_argument("--top", type=int, default=12, help="Number of top disrupted roads to display (default: 12)")
+    parser.add_argument("--ask", type=str, default=None, help="Ask a natural language question to the AI Tactical Commander")
+    parser.add_argument("--ai-decision", action="store_true", help="Generate automated LLM Strategic SitRep using OmniRoute")
+    parser.add_argument("--vehicle", type=str, default="hatchback", help="Vehicle type: bike, hatchback, sedan, suv, ambulance")
 
     args = parser.parse_args()
+
+    # Fast-path for natural language question
+    if args.ask:
+        from flood_ai_agent import ChennaiFloodAIAgent
+        agent = ChennaiFloodAIAgent()
+        ans = agent.ask(args.ask, rain_mm=args.rain24 or 140.0)
+        print("\n🤖 CHENNAI FLOOD AI TACTICAL ADVISORY:")
+        print("=" * 80)
+        print(ans.get("ai_briefing", ans.get("sitrep", "")))
+        print("=" * 80)
+        return
+
     predictor = ChennaiFloodPredictor()
 
     is_live_mode = False
@@ -373,6 +388,20 @@ def main():
                 print(f"    Routing Principle : Diverted along elevated ridges & high-HAND corridors.")
             else:
                 print("  No route path found between specified endpoints.")
+
+    # 4. Automated LLM Tactical Decision Directive
+    if args.ai_decision:
+        print("\n" + "=" * 85)
+        print("🤖 GENERATING AI TACTICAL DISASTER COMMAND SITREP (via OmniRoute)...")
+        print("=" * 85)
+        from flood_ai_agent import ChennaiFloodAIAgent
+        agent = ChennaiFloodAIAgent()
+        sitrep_res = agent.generate_sitrep(
+            scenario=args.scenario or "cyclone",
+            rain_mm=args.rain24,
+            use_live=args.live
+        )
+        print("\n" + sitrep_res["sitrep"])
 
     print("\n" + "="*85)
     print("✅ PRE-DISASTER EARLY-WARNING ASSESSMENT COMPLETED.")
