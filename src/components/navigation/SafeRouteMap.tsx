@@ -66,6 +66,14 @@ export const SafeRouteMap: React.FC<SafeRouteMapProps> = ({
   const elevationLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const historicalFloodsLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
+  // Map Style mode (Default to 'satellite' as requested)
+  const [mapMode, setMapMode] = useState<'satellite' | 'street'>('satellite');
+
+  // Tile layer references for dynamic switching
+  const streetTileLayerRef = useRef<L.TileLayer | null>(null);
+  const satelliteTileLayerRef = useRef<L.TileLayer | null>(null);
+  const labelsTileLayerRef = useRef<L.TileLayer | null>(null);
+
   // Layer toggles
   const [showDrainage, setShowDrainage] = useState(true);
   const [showWaterBodies, setShowWaterBodies] = useState(true);
@@ -83,10 +91,28 @@ export const SafeRouteMap: React.FC<SafeRouteMapProps> = ({
       zoomControl: false
     });
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const streetTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19
-    }).addTo(map);
+    });
+
+    const satelliteTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+      maxZoom: 19
+    });
+
+    const labelsTile = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      opacity: 0.85
+    });
+
+    streetTileLayerRef.current = streetTile;
+    satelliteTileLayerRef.current = satelliteTile;
+    labelsTileLayerRef.current = labelsTile;
+
+    // Default to Satellite + Hybrid Labels for high-resolution aerial view
+    satelliteTile.addTo(map);
+    labelsTile.addTo(map);
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -114,6 +140,25 @@ export const SafeRouteMap: React.FC<SafeRouteMapProps> = ({
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Switch between Street and Satellite base tile layers
+  useEffect(() => {
+    if (!mapInstanceRef.current || !streetTileLayerRef.current || !satelliteTileLayerRef.current) return;
+    const map = mapInstanceRef.current;
+    const street = streetTileLayerRef.current;
+    const satellite = satelliteTileLayerRef.current;
+    const labels = labelsTileLayerRef.current;
+
+    if (mapMode === 'satellite') {
+      if (map.hasLayer(street)) map.removeLayer(street);
+      if (!map.hasLayer(satellite)) satellite.addTo(map);
+      if (labels && !map.hasLayer(labels)) labels.addTo(map);
+    } else {
+      if (map.hasLayer(satellite)) map.removeLayer(satellite);
+      if (labels && map.hasLayer(labels)) map.removeLayer(labels);
+      if (!map.hasLayer(street)) street.addTo(map);
+    }
+  }, [mapMode]);
 
   useEffect(() => {
     if (!roadsLayerGroupRef.current || !mapInstanceRef.current) return;
@@ -525,52 +570,85 @@ export const SafeRouteMap: React.FC<SafeRouteMapProps> = ({
 
       {/* Top Right: Hydrology Layer Toggles & Multi-Factor Legend */}
       <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2 max-w-[calc(100vw-32px)]">
-        {/* Layer Toggles */}
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-white/95 border border-slate-200/90 shadow-sm backdrop-blur-xs text-[11px] overflow-x-auto max-w-full">
-          <button
-            type="button"
-            onClick={() => setShowDrainage(!showDrainage)}
-            className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
-              showDrainage ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="Toggle 634 Drainage Channels & Rivers (Adyar, Cooum, Buckingham)"
-          >
-            <span>💧</span>
-            <span>Canals ({drainageGeoJson?.features?.length || 634})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowWaterBodies(!showWaterBodies)}
-            className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
-              showWaterBodies ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="Toggle 1,213 Lakes, Reservoirs & Water Bodies"
-          >
-            <span>🌊</span>
-            <span>Lakes ({waterBodiesGeoJson?.features?.length || '1.2k'})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowElevation(!showElevation)}
-            className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
-              showElevation ? 'bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="Toggle 158 Elevation Benchmarks & DEM Contours (Copernicus GLO-90 DEM)"
-          >
-            <span>⛰️</span>
-            <span>Elevation ({elevationBenchmarks.length || 158})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowHistoricalFloods(!showHistoricalFloods)}
-            className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
-              showHistoricalFloods ? 'bg-red-50 text-red-700 border border-red-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="Toggle Historical Flood Inundation Hotspots (Michaung & 2015)"
-          >
-            <span>⚠️</span>
-            <span>Floods</span>
-          </button>
+        {/* Style & Layer Toggles Row */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {/* Base Map Switcher: Satellite vs Street */}
+          <div className="flex items-center bg-slate-900/90 p-0.5 rounded-lg border border-slate-700 shadow-md backdrop-blur-xs text-[11px]">
+            <button
+              type="button"
+              onClick={() => setMapMode('satellite')}
+              className={`px-2 py-1 rounded font-semibold transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                mapMode === 'satellite'
+                  ? 'bg-sky-500 text-white shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="High-Resolution Satellite Aerial View"
+            >
+              <span>🛰️</span>
+              <span>Satellite</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapMode('street')}
+              className={`px-2 py-1 rounded font-semibold transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                mapMode === 'street'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="Standard Street Map"
+            >
+              <span>🗺️</span>
+              <span>Street</span>
+            </button>
+          </div>
+
+          {/* Layer Toggles */}
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-white/95 border border-slate-200/90 shadow-sm backdrop-blur-xs text-[11px] overflow-x-auto max-w-full">
+            <button
+              type="button"
+              onClick={() => setShowDrainage(!showDrainage)}
+              className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                showDrainage ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
+              }`}
+              title="Toggle 634 Drainage Channels & Rivers (Adyar, Cooum, Buckingham)"
+            >
+              <span>💧</span>
+              <span>Canals ({drainageGeoJson?.features?.length || 634})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowWaterBodies(!showWaterBodies)}
+              className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                showWaterBodies ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
+              }`}
+              title="Toggle 1,213 Lakes, Reservoirs & Water Bodies"
+            >
+              <span>🌊</span>
+              <span>Lakes ({waterBodiesGeoJson?.features?.length || '1.2k'})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowElevation(!showElevation)}
+              className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                showElevation ? 'bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
+              }`}
+              title="Toggle 158 Elevation Benchmarks & DEM Contours (Copernicus GLO-90 DEM)"
+            >
+              <span>⛰️</span>
+              <span>Elevation ({elevationBenchmarks.length || 158})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowHistoricalFloods(!showHistoricalFloods)}
+              className={`px-2 py-1 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                showHistoricalFloods ? 'bg-red-50 text-red-700 border border-red-200 shadow-2xs' : 'text-slate-400 hover:text-slate-600'
+              }`}
+              title="Toggle Historical Flood Inundation Hotspots (Michaung & 2015)"
+            >
+              <span>⚠️</span>
+              <span>Floods</span>
+            </button>
+          </div>
         </div>
 
         {/* Multi-Factor Legends: Road Risk & MSL Elevation Tiers */}
