@@ -1,13 +1,18 @@
-import React from 'react';
+import { ChennaiForecastResponse } from '../../types/weather';
+import { Calendar, CloudRain, ExternalLink } from 'lucide-react';
 
 interface FloodMapViewProps {
   rainfallMm: number;
   onFocusWaterbody?: (name: string, coords: [number, number]) => void;
+  forecast?: ChennaiForecastResponse | null;
+  onOpenForecastModal?: () => void;
 }
 
 export const FloodMapView: React.FC<FloodMapViewProps> = ({
   rainfallMm,
-  onFocusWaterbody
+  onFocusWaterbody,
+  forecast,
+  onOpenForecastModal
 }) => {
   const criticalBasins = [
     {
@@ -41,7 +46,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white text-slate-800 p-5 overflow-y-auto space-y-6">
+    <div className="flex flex-col h-full bg-white text-slate-800 p-5 overflow-y-auto space-y-5">
       <div>
         <h2 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
           FLOOD MAP INTELLIGENCE
@@ -50,6 +55,42 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({
           Hydrological monitoring across drainage basins and subways
         </p>
       </div>
+
+      {/* 7-Day Basin Rainfall Outlook if Forecast available */}
+      {forecast && (
+        <div className="p-3.5 rounded-xl border border-sky-200/80 bg-sky-50/50 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-sky-700" />
+              <span>7-Day Meteorological Outlook</span>
+            </span>
+            {onOpenForecastModal && (
+              <button
+                type="button"
+                onClick={onOpenForecastModal}
+                className="text-[10px] font-semibold text-sky-800 hover:text-sky-950 flex items-center gap-1 cursor-pointer"
+              >
+                <span>Full Forecast</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {forecast.daily.slice(0, 4).map((d) => (
+              <div
+                key={d.date}
+                className="p-1.5 rounded-lg bg-white/90 border border-sky-100 text-center"
+              >
+                <div className="text-[10px] font-bold text-slate-800">{d.dayName.split(',')[0]}</div>
+                <div className="text-xs my-0.5">{d.icon}</div>
+                <div className="text-[10.5px] font-mono font-bold text-sky-700">{d.precipSumMm}mm</div>
+                <div className="text-[9px] text-slate-400">{d.precipProbMax}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2.5">
         <div className="flex items-center justify-between">

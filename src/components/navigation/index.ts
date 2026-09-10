@@ -7,3 +7,4 @@ export { FloodMapView } from './FloodMapView';
 export { HistoryView } from './HistoryView';
 export { NavigationMenuBar } from './NavigationMenuBar';
 export { SafeRouteMap } from './SafeRouteMap';
+export { ChennaiWeatherForecastModal } from './ChennaiWeatherForecastModal';

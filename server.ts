@@ -546,6 +546,188 @@ app.post("/api/flood/calculate-route", (req, res) => {
   }
 });
 
+// In-memory cache for weather forecast (5 minutes TTL)
+let weatherForecastCache: { timestamp: number; data: any } | null = null;
+const WEATHER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getWmoWeatherDescription(code: number): { text: string; icon: string } {
+  switch (code) {
+    case 0: return { text: "Clear Sky", icon: "☀️" };
+    case 1: return { text: "Mainly Clear", icon: "🌤️" };
+    case 2: return { text: "Partly Cloudy", icon: "⛅" };
+    case 3: return { text: "Overcast", icon: "☁️" };
+    case 45:
+    case 48: return { text: "Foggy", icon: "🌫️" };
+    case 51: return { text: "Light Drizzle", icon: "🌦️" };
+    case 53: return { text: "Moderate Drizzle", icon: "🌦️" };
+    case 55: return { text: "Dense Drizzle", icon: "🌧️" };
+    case 61: return { text: "Slight Rain", icon: "🌦️" };
+    case 63: return { text: "Moderate Rain", icon: "🌧️" };
+    case 65: return { text: "Heavy Rainfall", icon: "⛈️" };
+    case 80: return { text: "Slight Showers", icon: "🌦️" };
+    case 81: return { text: "Moderate Showers", icon: "🌧️" };
+    case 82: return { text: "Violent Rain Showers", icon: "⛈️" };
+    case 95: return { text: "Thunderstorm", icon: "⚡" };
+    case 96:
+    case 99: return { text: "Severe Thunderstorm", icon: "⛈️" };
+    default: return { text: "Cloudy / Humid", icon: "⛅" };
+  }
+}
+
+// Live Multi-Station Weather & 7-Day Forecast Endpoint from Open-Meteo
+app.get("/api/weather/forecast", async (_req, res) => {
+  try {
+    const now = Date.now();
+    if (weatherForecastCache && (now - weatherForecastCache.timestamp) < WEATHER_CACHE_TTL_MS) {
+      return res.json({ success: true, cached: true, ...weatherForecastCache.data });
+    }
+
+    // 1. Fetch Chennai Central 7-Day Forecast + Current + Hourly
+    const centralUrl = `https://api.open-meteo.com/v1/forecast?latitude=13.0827&longitude=80.2707&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,rain,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max&timezone=Asia%2FKolkata&forecast_days=7`;
+    
+    // 2. Fetch Multi-Zone Stations across Greater Chennai
+    const zoneLats = ["13.061", "12.994", "12.980", "12.901", "13.114", "13.136"];
+    const zoneLons = ["80.244", "80.180", "80.222", "80.228", "80.154", "80.288"];
+    const zoneNames = [
+      "Nungambakkam (Central)",
+      "Meenambakkam (Airport)",
+      "Velachery (South Basin)",
+      "Sholinganallur (OMR)",
+      "Ambattur (West)",
+      "Tondiarpet (North Coast)"
+    ];
+    const multiStationUrl = `https://api.open-meteo.com/v1/forecast?latitude=${zoneLats.join(",")}&longitude=${zoneLons.join(",")}&hourly=precipitation,rain&daily=precipitation_sum,temperature_2m_max&timezone=Asia/Kolkata&forecast_days=3`;
+
+    const [centralRes, zonesRes] = await Promise.all([
+      fetch(centralUrl),
+      fetch(multiStationUrl)
+    ]);
+
+    const centralData = await centralRes.json();
+    const zonesData = await zonesRes.json();
+
+    // Format Current Weather
+    const curr = centralData.current || {};
+    const wmoInfo = getWmoWeatherDescription(curr.weather_code ?? 2);
+    const currentFormatted = {
+      time: curr.time || new Date().toISOString(),
+      temperature: curr.temperature_2m ?? 28,
+      feelsLike: curr.apparent_temperature ?? 33,
+      humidity: curr.relative_humidity_2m ?? 80,
+      windSpeed: curr.wind_speed_10m ?? 8,
+      windDirection: curr.wind_direction_10m ?? 0,
+      weatherCode: curr.weather_code ?? 2,
+      conditionText: wmoInfo.text,
+      icon: wmoInfo.icon,
+      precipitationMm: curr.precipitation ?? 0,
+      isRaining: (curr.precipitation ?? 0) > 0.1 || (curr.weather_code ?? 0) >= 51
+    };
+
+    // Format 7-Day Daily Forecast
+    const dailyRaw = centralData.daily || { time: [] };
+    const dailyFormatted = (dailyRaw.time || []).map((dateStr: string, idx: number) => {
+      const dateObj = new Date(dateStr + "T12:00:00+05:30");
+      const isToday = idx === 0;
+      const isTomorrow = idx === 1;
+      const dayName = isToday
+        ? "Today"
+        : isTomorrow
+        ? "Tomorrow"
+        : dateObj.toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" });
+
+      const wCode = dailyRaw.weather_code?.[idx] ?? 2;
+      const wDesc = getWmoWeatherDescription(wCode);
+      const precipSum = Number(dailyRaw.precipitation_sum?.[idx] ?? 0);
+      const precipProb = Number(dailyRaw.precipitation_probability_max?.[idx] ?? 0);
+
+      // Assess flood risk level based on precipitation volume
+      let floodRiskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME' = 'LOW';
+      if (precipSum > 100) floodRiskLevel = 'EXTREME';
+      else if (precipSum > 40) floodRiskLevel = 'HIGH';
+      else if (precipSum > 10 || precipProb > 65) floodRiskLevel = 'MODERATE';
+
+      return {
+        date: dateStr,
+        dayName,
+        weatherCode: wCode,
+        conditionText: wDesc.text,
+        icon: wDesc.icon,
+        tempMax: Math.round(dailyRaw.temperature_2m_max?.[idx] ?? 33),
+        tempMin: Math.round(dailyRaw.temperature_2m_min?.[idx] ?? 26),
+        precipSumMm: precipSum,
+        precipProbMax: precipProb,
+        windSpeedMax: Math.round(dailyRaw.wind_speed_10m_max?.[idx] ?? 12),
+        floodRiskLevel
+      };
+    });
+
+    // Format Today's 24-Hour Hourly Timeline
+    const hourlyRaw = centralData.hourly || { time: [] };
+    const hourlyToday = [];
+    const todayDateStr = dailyRaw.time?.[0] || new Date().toISOString().split('T')[0];
+
+    for (let i = 0; i < (hourlyRaw.time?.length || 0); i++) {
+      const timeStr = hourlyRaw.time[i];
+      if (timeStr.startsWith(todayDateStr)) {
+        const hour = timeStr.split("T")[1];
+        const wCode = hourlyRaw.weather_code?.[i] ?? 2;
+        hourlyToday.push({
+          time: hour,
+          fullTime: timeStr,
+          temp: Math.round(hourlyRaw.temperature_2m?.[i] ?? 28),
+          precipMm: Number(hourlyRaw.precipitation?.[i] ?? 0),
+          precipProb: Number(hourlyRaw.precipitation_probability?.[i] ?? 0),
+          weatherCode: wCode,
+          icon: getWmoWeatherDescription(wCode).icon
+        });
+      }
+    }
+
+    // Format 6 Regional Zones across Greater Chennai
+    const zonesFormatted = [];
+    if (Array.isArray(zonesData)) {
+      for (let z = 0; z < zonesData.length; z++) {
+        const zObj = zonesData[z];
+        const zPrecip24h = Number(zObj.daily?.precipitation_sum?.[0] ?? 0);
+        const zTemp = Math.round(zObj.daily?.temperature_2m_max?.[0] ?? 33);
+        let status = "Normal / Dry";
+        if (zPrecip24h > 40) status = "Alert: Heavy Inflow";
+        else if (zPrecip24h > 10) status = "Moderate Showers";
+        else if (zPrecip24h > 0.5) status = "Light Passing Showers";
+
+        zonesFormatted.push({
+          id: `zone-${z}`,
+          name: zoneNames[z] || `Zone ${z + 1}`,
+          lat: Number(zoneLats[z]),
+          lon: Number(zoneLons[z]),
+          tempMax: zTemp,
+          precip24h: zPrecip24h,
+          status
+        });
+      }
+    }
+
+    const payload = {
+      city: "Chennai, Tamil Nadu",
+      source: "Open-Meteo High-Resolution WMO Forecast",
+      lastUpdated: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST",
+      current: currentFormatted,
+      daily: dailyFormatted,
+      hourlyToday,
+      zones: zonesFormatted
+    };
+
+    weatherForecastCache = {
+      timestamp: now,
+      data: payload
+    };
+
+    res.json({ success: true, ...payload });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Live Multi-Station Weather Endpoint from Open-Meteo
 app.get("/api/weather/live", async (_req, res) => {
   try {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MapPin, ArrowRight, Check, SlidersHorizontal, ArrowUpDown, Crosshair } from 'lucide-react';
 import { RoutePreference, RouteOptionData, PlaceSuggestion } from '../../types/navigation';
 import { searchChennaiPlaces } from '../../services/routeService';
+import { ChennaiForecastResponse } from '../../types/weather';
 
 interface PlanRoutePanelProps {
   origin: string;
@@ -22,6 +23,8 @@ interface PlanRoutePanelProps {
   onSelectDestinationPlace?: (place: PlaceSuggestion) => void;
   onSwapLocations?: () => void;
   onUseCurrentLocation?: () => void;
+  forecast?: ChennaiForecastResponse | null;
+  onOpenForecastModal?: () => void;
 }
 
 const POPULAR_DESTINATIONS = [
@@ -52,7 +55,9 @@ export const PlanRoutePanel: React.FC<PlanRoutePanelProps> = ({
   onSelectOriginPlace,
   onSelectDestinationPlace,
   onSwapLocations,
-  onUseCurrentLocation
+  onUseCurrentLocation,
+  forecast,
+  onOpenForecastModal
 }) => {
   const [isSearchingOrigin, setIsSearchingOrigin] = useState(false);
   const [originSuggestions, setOriginSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -298,6 +303,50 @@ export const PlanRoutePanel: React.FC<PlanRoutePanelProps> = ({
             {rainfallMm} mm / 6h
           </span>
         </div>
+
+        {/* Real-Time Forecast Quick Day Selectors */}
+        {forecast && (
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg bg-slate-50 border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => {
+                const precip = forecast.daily[0]?.precipSumMm || 2.3;
+                // If forecast precip is light, map to realistic scenario volume e.g. 25-50mm or exact
+                setRainfallMm(Math.max(25, Math.round(precip * 15)));
+              }}
+              className="flex items-center gap-1 text-[10.5px] px-2 py-1 rounded-md bg-sky-100/90 hover:bg-sky-200 text-sky-900 border border-sky-300/70 transition-colors cursor-pointer font-semibold shadow-2xs"
+              title="Auto-sync route risk to Today's live precipitation forecast"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse" />
+              <span>Today: {forecast.daily[0]?.precipSumMm} mm</span>
+            </button>
+
+            {forecast.daily[1] && (
+              <button
+                type="button"
+                onClick={() => {
+                  const precip = forecast.daily[1]?.precipSumMm || 1.0;
+                  setRainfallMm(Math.max(25, Math.round(precip * 15)));
+                }}
+                className="flex items-center gap-1 text-[10.5px] px-2 py-1 rounded-md bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors cursor-pointer font-medium shadow-2xs"
+                title="Auto-sync route risk to Tomorrow's precipitation forecast"
+              >
+                <span>Tomorrow: {forecast.daily[1]?.precipSumMm} mm</span>
+              </button>
+            )}
+
+            {onOpenForecastModal && (
+              <button
+                type="button"
+                onClick={onOpenForecastModal}
+                className="text-[10.5px] px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white transition-colors cursor-pointer font-medium ml-auto shadow-2xs"
+                title="Open interactive 7-day weather & flood forecast"
+              >
+                7-Day ▾
+              </button>
+            )}
+          </div>
+        )}
 
         <input
           type="range"

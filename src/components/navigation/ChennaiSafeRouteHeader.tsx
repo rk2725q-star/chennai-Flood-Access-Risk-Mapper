@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { Phone, ShieldCheck, CloudRain } from 'lucide-react';
+import { Phone, ShieldCheck, CloudRain, Calendar, Sun } from 'lucide-react';
+import { ChennaiForecastResponse } from '../../types/weather';
 
 interface HeaderProps {
   rainfallMm: number;
+  forecast?: ChennaiForecastResponse | null;
+  onOpenForecastModal?: () => void;
 }
 
-export const ChennaiSafeRouteHeader: React.FC<HeaderProps> = ({ rainfallMm }) => {
+export const ChennaiSafeRouteHeader: React.FC<HeaderProps> = ({ 
+  rainfallMm,
+  forecast,
+  onOpenForecastModal 
+}) => {
   const [showMlModal, setShowMlModal] = useState(false);
 
   return (
@@ -33,20 +40,12 @@ export const ChennaiSafeRouteHeader: React.FC<HeaderProps> = ({ rainfallMm }) =>
               />
               <line
                 x1="12"
-                y1="7"
+                y1="3"
                 x2="12"
-                y2="10"
-                stroke="#94a3b8"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <line
-                x1="12"
-                y1="14"
-                x2="12"
-                y2="17"
-                stroke="#94a3b8"
-                strokeWidth="1.4"
+                y2="21"
+                stroke="#059669"
+                strokeWidth="1.8"
+                strokeDasharray="2 3"
                 strokeLinecap="round"
               />
               <path
@@ -73,8 +72,31 @@ export const ChennaiSafeRouteHeader: React.FC<HeaderProps> = ({ rainfallMm }) =>
           </div>
         </div>
 
-        {/* Right Controls: Scenario status, ML notice, GCC contact */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* Right Controls: Weather Forecast, Scenario status, ML notice, GCC contact */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Real-time Weather & 7-Day Forecast Button */}
+          {onOpenForecastModal && (
+            <button
+              type="button"
+              onClick={onOpenForecastModal}
+              title="Open Real-Time & 7-Day Chennai Weather Forecast"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-50/80 hover:bg-sky-100 border border-sky-200/80 text-xs text-sky-900 transition-colors cursor-pointer shadow-2xs font-medium"
+            >
+              <span className="text-sm leading-none">{forecast?.current?.icon || '⛅'}</span>
+              <span className="font-bold text-slate-900 font-mono">
+                {forecast?.current ? `${forecast.current.temperature}°C` : 'Forecast'}
+              </span>
+              {forecast?.daily?.[0] && (
+                <span className="text-sky-700 hidden sm:inline text-[11px]">
+                  • Today {forecast.daily[0].precipSumMm}mm
+                </span>
+              )}
+              <span className="text-[10px] text-sky-600 font-semibold px-1 rounded bg-white/80 border border-sky-200/60 ml-0.5">
+                7-Day ▾
+              </span>
+            </button>
+          )}
+
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700">
             <CloudRain className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <span className="font-medium text-slate-900">{rainfallMm} mm</span>

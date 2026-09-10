@@ -8,7 +8,8 @@ import {
   FloodMapView,
   HistoryView,
   NavigationMenuBar,
-  SafeRouteMap
+  SafeRouteMap,
+  ChennaiWeatherForecastModal
 } from './components/navigation';
 import {
   ActiveNavTab,
@@ -22,6 +23,8 @@ import {
   HistoricalFloodPoint,
   ElevationBenchmark
 } from './types/navigation';
+import { ChennaiForecastResponse } from './types/weather';
+import { fetchChennaiWeatherForecast } from './services/weatherService';
 import {
   calculateDynamicRoadRisks,
   fetchRouteRecommendations,
@@ -41,6 +44,11 @@ import { ChevronUp } from 'lucide-react';
 export function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<ActiveNavTab>('route');
+
+  // Real-time Meteorological & 7-Day Forecast State
+  const [forecast, setForecast] = useState<ChennaiForecastResponse | null>(null);
+  const [isLoadingForecast, setIsLoadingForecast] = useState<boolean>(false);
+  const [showForecastModal, setShowForecastModal] = useState<boolean>(false);
 
   // Hydrology Background Data Layers
   const [drainageChannels, setDrainageChannels] = useState<DrainageChannel[]>(MOCK_DRAINAGE_CHANNELS);
@@ -118,7 +126,7 @@ export function App() {
 
   const handleFindRoute = () => handleFindRouteWithParams();
 
-  // Run on mount once to pre-load default routes and fetch background hydrology layers
+  // Run on mount once to pre-load default routes, fetch background hydrology layers, and live weather forecast
   useEffect(() => {
     handleFindRoute();
     fetchHydrologyLayers().then((layers) => {
@@ -137,7 +145,31 @@ export function App() {
     fetchFullWaterBodiesGeoJson().then((geo) => {
       if (geo) setWaterBodiesGeoJson(geo);
     });
+    
+    // Fetch live weather & 7-day forecast
+    setIsLoadingForecast(true);
+    fetchChennaiWeatherForecast()
+      .then((fc) => {
+        if (fc) setForecast(fc);
+      })
+      .finally(() => setIsLoadingForecast(false));
   }, []);
+
+  const handleRefreshForecast = async () => {
+    setIsLoadingForecast(true);
+    try {
+      const fc = await fetchChennaiWeatherForecast();
+      if (fc) setForecast(fc);
+    } finally {
+      setIsLoadingForecast(false);
+    }
+  };
+
+  const handleApplyForecastToRoute = (precipMm: number, dayLabel: string) => {
+    const mappedRainfall = Math.max(25, Math.round(precipMm * 15));
+    setRainfallMm(mappedRainfall);
+    handleFindRouteWithParams({ newRainfallMm: mappedRainfall });
+  };
 
   // When rainfall slider moves, automatically refresh routes
   useEffect(() => {
@@ -279,7 +311,11 @@ export function App() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-white text-slate-800 antialiased font-sans">
       {/* Top Header with thin saffron line and bespoke brand */}
-      <ChennaiSafeRouteHeader rainfallMm={rainfallMm} />
+      <ChennaiSafeRouteHeader 
+        rainfallMm={rainfallMm} 
+        forecast={forecast}
+        onOpenForecastModal={() => setShowForecastModal(true)}
+      />
 
       {/* Main Content Area: Map + Left Panel */}
       <div className="relative flex-1 flex overflow-hidden">
@@ -306,6 +342,8 @@ export function App() {
                 onSelectDestinationPlace={handleSelectDestinationPlace}
                 onSwapLocations={handleSwapLocations}
                 onUseCurrentLocation={handleUseCurrentLocation}
+                forecast={forecast}
+                onOpenForecastModal={() => setShowForecastModal(true)}
               />
             )}
 
@@ -324,7 +362,11 @@ export function App() {
             )}
 
             {activeTab === 'flood_map' && (
-              <FloodMapView rainfallMm={rainfallMm} />
+              <FloodMapView 
+                rainfallMm={rainfallMm} 
+                forecast={forecast}
+                onOpenForecastModal={() => setShowForecastModal(true)}
+              />
             )}
 
             {activeTab === 'history' && (
@@ -415,6 +457,8 @@ export function App() {
                     onSelectDestinationPlace={handleSelectDestinationPlace}
                     onSwapLocations={handleSwapLocations}
                     onUseCurrentLocation={handleUseCurrentLocation}
+                    forecast={forecast}
+                    onOpenForecastModal={() => setShowForecastModal(true)}
                   />
                 ) : (
                   <div
@@ -443,7 +487,11 @@ export function App() {
                   onSelectFacility={(fac) => setFocusedFacilityCoords(fac.coordinates)}
                 />
               ) : activeTab === 'flood_map' ? (
-                <FloodMapView rainfallMm={rainfallMm} />
+                <FloodMapView 
+                  rainfallMm={rainfallMm} 
+                  forecast={forecast}
+                  onOpenForecastModal={() => setShowForecastModal(true)}
+                />
               ) : (
                 <HistoryView onRerunRoute={handleRerunHistory} />
               )}
@@ -463,6 +511,17 @@ export function App() {
           riskRoadCount={dynamicRoadSegments.filter(r => r.currentRisk >= 60).length}
         />
       </div>
+
+      {/* Chennai Weather Forecast & 7-Day Simulation Modal */}
+      {showForecastModal && (
+        <ChennaiWeatherForecastModal
+          forecast={forecast}
+          isLoading={isLoadingForecast}
+          onRefresh={handleRefreshForecast}
+          onClose={() => setShowForecastModal(false)}
+          onApplyForecastToRoute={handleApplyForecastToRoute}
+        />
+      )}
     </div>
   );
 }
