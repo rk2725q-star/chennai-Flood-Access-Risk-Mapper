@@ -10,14 +10,45 @@ import {
   NavigationMenuBar,
   SafeRouteMap
 } from './components/navigation';
-import { ActiveNavTab, RoutePreference, RoadRiskSegment, RouteOptionData, EmergencyFacility, PlaceSuggestion } from './types/navigation';
-import { calculateDynamicRoadRisks, fetchRouteRecommendations } from './services/routeService';
-import { MOCK_EMERGENCY_FACILITIES } from './data/mockNavigationData';
+import {
+  ActiveNavTab,
+  RoutePreference,
+  RoadRiskSegment,
+  RouteOptionData,
+  EmergencyFacility,
+  PlaceSuggestion,
+  DrainageChannel,
+  WaterBody,
+  HistoricalFloodPoint,
+  ElevationBenchmark
+} from './types/navigation';
+import {
+  calculateDynamicRoadRisks,
+  fetchRouteRecommendations,
+  fetchHydrologyLayers,
+  fetchElevationBenchmarks,
+  fetchFullDrainageGeoJson,
+  fetchFullWaterBodiesGeoJson
+} from './services/routeService';
+import {
+  MOCK_EMERGENCY_FACILITIES,
+  MOCK_DRAINAGE_CHANNELS,
+  MOCK_WATER_BODIES,
+  MOCK_HISTORICAL_FLOODS
+} from './data/mockNavigationData';
 import { ChevronUp } from 'lucide-react';
 
 export function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<ActiveNavTab>('route');
+
+  // Hydrology Background Data Layers
+  const [drainageChannels, setDrainageChannels] = useState<DrainageChannel[]>(MOCK_DRAINAGE_CHANNELS);
+  const [waterBodies, setWaterBodies] = useState<WaterBody[]>(MOCK_WATER_BODIES);
+  const [historicalFloods, setHistoricalFloods] = useState<HistoricalFloodPoint[]>(MOCK_HISTORICAL_FLOODS);
+  const [elevationBenchmarks, setElevationBenchmarks] = useState<ElevationBenchmark[]>([]);
+  const [drainageGeoJson, setDrainageGeoJson] = useState<any | null>(null);
+  const [waterBodiesGeoJson, setWaterBodiesGeoJson] = useState<any | null>(null);
 
   // Route Planning State & Coordinates
   const [origin, setOrigin] = useState('Current location (T. Nagar)');
@@ -87,9 +118,25 @@ export function App() {
 
   const handleFindRoute = () => handleFindRouteWithParams();
 
-  // Run on mount once to pre-load default routes
+  // Run on mount once to pre-load default routes and fetch background hydrology layers
   useEffect(() => {
     handleFindRoute();
+    fetchHydrologyLayers().then((layers) => {
+      if (layers.drainageChannels?.length) setDrainageChannels(layers.drainageChannels);
+      if (layers.waterBodies?.length) setWaterBodies(layers.waterBodies);
+      if (layers.historicalFloods?.length) setHistoricalFloods(layers.historicalFloods);
+    });
+    fetchElevationBenchmarks().then((benchmarks) => {
+      if (benchmarks && benchmarks.length > 0) {
+        setElevationBenchmarks(benchmarks);
+      }
+    });
+    fetchFullDrainageGeoJson().then((geo) => {
+      if (geo) setDrainageGeoJson(geo);
+    });
+    fetchFullWaterBodiesGeoJson().then((geo) => {
+      if (geo) setWaterBodiesGeoJson(geo);
+    });
   }, []);
 
   // When rainfall slider moves, automatically refresh routes
@@ -313,6 +360,12 @@ export function App() {
             onNavigateToFacility={handleNavigateToEmergency}
             userGpsCoords={userGpsCoords}
             focusedFacilityCoords={focusedFacilityCoords}
+            drainageChannels={drainageChannels}
+            waterBodies={waterBodies}
+            historicalFloods={historicalFloods}
+            elevationBenchmarks={elevationBenchmarks}
+            drainageGeoJson={drainageGeoJson}
+            waterBodiesGeoJson={waterBodiesGeoJson}
           />
 
           {/* Road Risk Drawer (Slides in from the right when tapping a red road segment) */}

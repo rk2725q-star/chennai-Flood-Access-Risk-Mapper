@@ -62,7 +62,56 @@ export interface PlaceSuggestion {
   name: string;
   description: string;
   category: string;
+  zone?: 'North Chennai' | 'Central Chennai' | 'South Chennai' | 'West Chennai' | 'Suburbs & Transit' | 'Hospitals & Relief';
   coordinates: [number, number];
+}
+
+export interface DrainageChannel {
+  id: string;
+  name: string;
+  waterwayType: string;
+  coordinates: [number, number][];
+}
+
+export interface WaterBody {
+  id: string;
+  name: string;
+  category: string;
+  waterType: string;
+  coordinates: [number, number];
+  areaHa?: number;
+}
+
+export interface HistoricalFloodPoint {
+  id: string;
+  eventName: string;
+  locationName: string;
+  severityClass: string;
+  waterLevelM: number;
+  rainfall24hMm: number;
+  coordinates: [number, number];
+}
+
+export interface ElevationBenchmark {
+  id: string;
+  name: string;
+  type: string;
+  lat: number;
+  lon: number;
+  elevationM: number;
+  terrainClass: string;
+  riskCategory: 'critical_basin' | 'lowland' | 'mid_plain' | 'high_ground';
+}
+
+export interface BackgroundIntelligenceStats {
+  monitoredRoadsCount: number;
+  drainageChannelsCount: number;
+  waterBodiesCount: number;
+  historicalFloodEventsCount: number;
+  elevationRangeMsl: string;
+  modelEnsemble: string;
+  activeWeatherStationsCount: number;
+  timestamp: string;
 }
 
 export interface JourneyHistoryItem {
@@ -78,3 +127,4 @@ export interface JourneyHistoryItem {
 }
 
 export type ActiveNavTab = 'route' | 'flood_map' | 'risk_roads' | 'emergency' | 'history';
+
